@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
+import json
 import math
 from numbers import Number
+import time
 
 from cereal import car, log
 import cereal.messaging as messaging
@@ -27,6 +29,8 @@ LaneChangeState = log.LaneChangeState
 LaneChangeDirection = log.LaneChangeDirection
 
 ACTUATOR_FIELDS = tuple(car.CarControl.Actuators.schema.fields.keys())
+
+NAV_BLINKER_TEST_COMMAND_PARAM = "TeslaNavBlinkerTestCommand"
 
 
 class Controls(ControlsExt):
@@ -65,6 +69,38 @@ class Controls(ControlsExt):
       self.LaC = LatControlTorque(self.CP, self.CP_SP, self.CI, DT_CTRL)
 
     self.LaC = ControlsExt.initialize_lateral_control(self, self.LaC, self.CI, DT_CTRL)
+
+  def _apply_tesla_nav_blinker_test_command(self, CC):
+    if self.CP.brand != "tesla" or not self.params.get_bool("TeslaNavBlinkerControl"):
+      return
+
+    raw_command = self.params.get(NAV_BLINKER_TEST_COMMAND_PARAM)
+    if not raw_command:
+      return
+
+    try:
+      command = json.loads(raw_command)
+    except (json.JSONDecodeError, TypeError):
+      return
+
+    try:
+      expires_at = float(command.get("expires_at", 0.0))
+    except (TypeError, ValueError):
+      return
+
+    if time.monotonic() > expires_at:
+      return
+
+    direction = command.get("direction")
+    if direction == "left":
+      CC.leftBlinker = True
+      CC.rightBlinker = False
+    elif direction == "right":
+      CC.leftBlinker = False
+      CC.rightBlinker = True
+    elif direction in ("cancel", "off"):
+      CC.leftBlinker = False
+      CC.rightBlinker = False
 
   def update(self):
     self.sm.update(15)
@@ -122,6 +158,8 @@ class Controls(ControlsExt):
     if model_v2.meta.laneChangeState != LaneChangeState.off:
       CC.leftBlinker = model_v2.meta.laneChangeDirection == LaneChangeDirection.left
       CC.rightBlinker = model_v2.meta.laneChangeDirection == LaneChangeDirection.right
+
+    self._apply_tesla_nav_blinker_test_command(CC)
 
     if not CC.latActive:
       self.LaC.reset()
