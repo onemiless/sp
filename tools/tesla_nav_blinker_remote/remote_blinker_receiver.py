@@ -15,9 +15,10 @@ def parse_args() -> argparse.Namespace:
   parser.add_argument("--host", default="0.0.0.0", help="UDP bind host")
   parser.add_argument("--port", type=int, default=7788, help="UDP bind port")
   parser.add_argument("--token", default="", help="Optional shared token required in incoming JSON")
-  parser.add_argument("--enable-control", action="store_true",
-                      help="Set TeslaNavBlinkerControl=1 before listening. Restart comma/openpilot first if CarParamsSP was already built.")
-  return parser.parse_args()
+  parser.add_argument("--no-enable-control", action="store_true",
+                      help="Do not set TeslaNavBlinkerControl=1 before listening.")
+  args, _ = parser.parse_known_args()
+  return args
 
 
 def clamp_duration(value: object) -> float:
@@ -32,16 +33,17 @@ def main() -> None:
   args = parse_args()
   params = Params()
 
-  if args.enable_control:
+  if not args.no_enable_control:
     params.put_bool("TeslaNavBlinkerControl", True)
 
   if not params.get_bool("TeslaNavBlinkerControl"):
     print("TeslaNavBlinkerControl is OFF.")
     print("Enable it first, then restart comma/openpilot so Tesla CarParamsSP includes the nav blinker flag.")
-    print("Example: ./tools/tesla_nav_blinker_remote/remote_blinker_receiver.py --enable-control")
+    print("Example: ./tools/tesla_nav_blinker_remote/remote_blinker_receiver.py")
     return
 
   sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+  sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
   sock.bind((args.host, args.port))
   print(f"Listening for Tesla blinker test UDP commands on {args.host}:{args.port}")
   if args.token:

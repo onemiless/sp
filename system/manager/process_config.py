@@ -58,6 +58,9 @@ def qcomgps(started: bool, params: Params, CP: car.CarParams) -> bool:
 def always_run(started: bool, params: Params, CP: car.CarParams) -> bool:
   return True
 
+def tesla_nav_blinker_remote(started: bool, params: Params, CP: car.CarParams) -> bool:
+  return params.get_bool("TeslaNavBlinkerRemoteEnabled")
+
 def only_onroad(started: bool, params: Params, CP: car.CarParams) -> bool:
   return started
 
@@ -131,6 +134,7 @@ procs = [
   NativeProcess("_pandad", "selfdrive/pandad", ["./pandad"], always_run, enabled=False),
   PythonProcess("calibrationd", "selfdrive.locationd.calibrationd", only_onroad),
   PythonProcess("torqued", "selfdrive.locationd.torqued", only_onroad),
+  PythonProcess("tesla_blinker_remote", "tools.tesla_nav_blinker_remote.remote_blinker_receiver", tesla_nav_blinker_remote, restart_if_crash=True),
   PythonProcess("controlsd", "selfdrive.controls.controlsd", and_(not_joystick, iscar)),
   PythonProcess("joystickd", "tools.joystick.joystickd", or_(joystick, notcar)),
   PythonProcess("selfdrived", "selfdrive.selfdrived.selfdrived", only_onroad),
