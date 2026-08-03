@@ -2,13 +2,15 @@
 import threading
 import time
 
-from cereal import messaging
+from cereal import car, messaging
 from openpilot.common.params import Params
+from openpilot.selfdrive.debug.tesla_can_visualization import TeslaCanVisualization
 
 
 SERVICES = ("carState", "carStateSP", "controlsState", "selfdriveState", "selfdriveStateSP", "modelV2")
 MAX_TRAJECTORY_DISTANCE_M = 100.0
 TRAJECTORY_STRIDE = 3
+MAX_CAN_EVENTS_PER_SNAPSHOT = 250
 
 
 def _number(value: object, digits: int = 1) -> float:
@@ -18,6 +20,16 @@ def _number(value: object, digits: int = 1) -> float:
 def _set_speed_kph(v_cruise_cluster: float, fallback_v_cruise: float) -> float:
   """Mirror the on-device HUD: vCruiseCluster is already in display units."""
   return fallback_v_cruise if v_cruise_cluster == 0.0 else v_cruise_cluster
+
+
+def _is_tesla_model_y(car_params: bytes | None) -> bool:
+  if not car_params:
+    return False
+  try:
+    with car.CarParams.from_bytes(car_params) as cp:
+      return cp.brand == "tesla" and cp.carFingerprint == "TESLA_MODEL_Y"
+  except Exception:
+    return False
 
 
 def _line_points(line: object) -> list[list[float]]:
@@ -31,7 +43,7 @@ def _line_points(line: object) -> list[list[float]]:
   return points
 
 
-def _model_geometry(model: object, car_state_sp: object) -> dict[str, object]:
+def _model_geometry(model: object, car_state_sp: object, oem_can: dict[str, object]) -> dict[str, object]:
   leads = []
   for lead in model.leadsV3:
     if lead.prob >= 0.5 and len(lead.x) and len(lead.y):
@@ -50,6 +62,7 @@ def _model_geometry(model: object, car_state_sp: object) -> dict[str, object]:
       "light_color": int(car_state_sp.teslaRoadContext.trafficLightColor),
       "stop_line_distance": _number(car_state_sp.teslaRoadContext.stopLineDistance),
     },
+    "oem_can": oem_can,
   }
 
 
@@ -57,7 +70,24 @@ class DrivingStatus:
   def __init__(self) -> None:
     self.params = Params()
     self.sm = messaging.SubMaster(SERVICES)
+    self.can_sock = messaging.sub_sock("can", conflate=False)
+    self.tesla_can = TeslaCanVisualization()
     self.lock = threading.Lock()
+
+  def _is_tesla_model_y(self) -> bool:
+    car_params = self.params.get("CarParams") or self.params.get("CarParamsPersistent")
+    return _is_tesla_model_y(car_params)
+
+  def _update_tesla_can(self) -> dict[str, object]:
+    packets = []
+    events = messaging.drain_sock(self.can_sock)
+    for event in events[-MAX_CAN_EVENTS_PER_SNAPSHOT:]:
+      packets.append((event.logMonoTime, [(frame.address, bytes(frame.dat), frame.src) for frame in event.can]))
+    if self._is_tesla_model_y():
+      self.tesla_can.update(packets)
+    else:
+      self.tesla_can.reset()
+    return self.tesla_can.snapshot()
 
   def snapshot(self) -> dict[str, object]:
     with self.lock:
@@ -68,6 +98,7 @@ class DrivingStatus:
       selfdrive_state = self.sm["selfdriveState"]
       sp_state = self.sm["selfdriveStateSP"]
       model = self.sm["modelV2"]
+      oem_can = self._update_tesla_can()
 
       alert = " ".join(text for text in (selfdrive_state.alertText1, selfdrive_state.alertText2) if text)
       cruise_speed = _set_speed_kph(float(car_state.vCruiseCluster), float(controls_state.deprecated.vCruise))
@@ -79,8 +110,8 @@ class DrivingStatus:
         "openpilot_enabled": bool(selfdrive_state.enabled),
         "mads_enabled": bool(sp_state.mads.enabled),
         "alert": alert,
-        "geometry": _model_geometry(model, car_state_sp),
-        "updated_at": int(time.time()),
+        "geometry": _model_geometry(model, car_state_sp, oem_can),
+        "updated_at": int(time.monotonic()),
       }
 
 

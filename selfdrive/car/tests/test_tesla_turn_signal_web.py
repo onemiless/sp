@@ -14,6 +14,10 @@ def test_turn_signal_web_page_exposes_sp_driven_actions_and_cancel():
   assert "SP 完成变道后会自动关闭转向灯" in page
   assert "立即取消" in page
   assert "card 实时线程" in page
+  assert "tesla_modely_hw4_perception" in page
+  assert "车道" in page
+  assert "周边目标" in page
+  assert "交通控制" in page
 
 
 def test_turn_signal_web_returns_read_only_driving_status(monkeypatch):
