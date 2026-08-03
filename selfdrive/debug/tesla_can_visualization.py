@@ -260,11 +260,18 @@ class TeslaCanVisualization:
 
     debug_frame = self._frame("DAS_visualDebug", now_ns)
     debug = debug_frame[0] if debug_frame else {}
+    left_current = _bool(debug, "DAS_rearLeftVehDetectedCurrent")
+    detected_this_cycle = _bool(debug, "DAS_rearVehDetectedThisCycle")
     rear = {
-      "detected_this_cycle": _bool(debug, "DAS_rearVehDetectedThisCycle"),
-      "left_current": _bool(debug, "DAS_rearLeftVehDetectedCurrent"),
+      "detected_this_cycle": detected_this_cycle,
+      "left_current": left_current,
       "left_trip": _bool(debug, "DAS_rearLeftVehDetectedTrip"),
       "right_trip": _bool(debug, "DAS_rearRightVehDetectedTrip"),
+      # The *_trip bits latch for the whole trip and must never drive a live
+      # display. The DBC has no right-side "current" bit, so the right side is
+      # inferred from the shared per-cycle bit when the left side is not set.
+      "left_live": left_current,
+      "right_live": detected_this_cycle and not left_current,
     }
     return vehicles, rear, sorted(source for source in sources if source)
 
@@ -273,19 +280,33 @@ class TeslaCanVisualization:
     sign_frame = self._object_frame(4, now_ns)
     control = control_frame[0] if control_frame else {}
     sign = sign_frame[0] if sign_frame else {}
+
+    # A fresh frame is not proof of a traffic light: the OEM broadcasts these
+    # messages continuously with idle/SNA values when no light is relevant, so
+    # only surface data when the control actually describes a light control.
+    feature_code = _int(control, "APP_tcFeatureState")
+    control_type_code = _int(control, "APP_tcControlType")
+    control_light = bool(control_frame) and control_type_code == 3 and feature_code in (2, 3)
+    crosswalk_active = bool(control_frame) and control_type_code in (5, 9) and feature_code in (2, 3)
+    control_available = control_light or crosswalk_active
+
+    sign_type_code = _int(sign, "DAS_roadSignId")
+    sign_valid = bool(sign_frame) and sign_type_code in (0, 1) and _int(sign, "DAS_roadSignSource") != 0
+
     control_distance = float(control.get("APP_tcControlDistance", 255.0))
     stop_line_distance = float(sign.get("DAS_roadSignStopLineDist", 184.6))
-    sign_type_code = _int(sign, "DAS_roadSignId")
     return {
-      "available": bool(control_frame or sign_frame),
-      "control_available": bool(control_frame),
-      "road_sign_available": bool(sign_frame),
-      "feature_state": TRAFFIC_FEATURE_STATES.get(_int(control, "APP_tcFeatureState"), "unknown"),
+      "available": bool(control_available or sign_valid),
+      "control_available": bool(control_available),
+      "road_sign_available": bool(sign_valid),
+      "control_frame_fresh": bool(control_frame),
+      "sign_frame_fresh": bool(sign_frame),
+      "feature_state": TRAFFIC_FEATURE_STATES.get(feature_code, "unknown"),
       "state_machine": TRAFFIC_MACHINE_STATES.get(_int(control, "APP_tcStateMachine"), "unknown"),
       "control_source": TRAFFIC_SOURCES.get(_int(control, "APP_tcControlSource"), "unknown"),
-      "control_type": TRAFFIC_TYPES.get(_int(control, "APP_tcControlType"), "unknown"),
-      "control_distance_m": _round(control_distance) if control_distance < 255.0 else None,
-      "light_state": LIGHT_STATES.get(_int(control, "APP_tcControlLightState"), "unknown"),
+      "control_type": TRAFFIC_TYPES.get(control_type_code, "unknown"),
+      "control_distance_m": _round(control_distance) if control_available and control_distance < 255.0 else None,
+      "light_state": LIGHT_STATES.get(_int(control, "APP_tcControlLightState"), "unknown") if control_available else "unknown",
       "continuation_reason": _int(control, "APP_tcContinuationReason"),
       "confirmation_type": _int(control, "APP_tcConfirmationType"),
       "warning_suppression_reason": _int(control, "APP_tcWarningSuppressionReason"),
@@ -294,12 +315,12 @@ class TeslaCanVisualization:
       "vision_sign": _bool(control, "APP_tcVisionSign"),
       "vision_road_marking": _bool(control, "APP_tcVisionRoadMarking"),
       "vision_line": _bool(control, "APP_tcVisionLine"),
-      "road_sign_type": ROAD_SIGN_TYPES.get(sign_type_code, "unknown") if sign_frame else "unknown",
-      "road_sign_color": ROAD_SIGN_COLORS.get(_int(sign, "DAS_roadSignColor"), "unknown") if sign_frame else "unknown",
-      "stop_line_distance_m": _round(stop_line_distance) if stop_line_distance < 184.6 else None,
+      "road_sign_type": ROAD_SIGN_TYPES.get(sign_type_code, "unknown") if sign_valid else "unknown",
+      "road_sign_color": ROAD_SIGN_COLORS.get(_int(sign, "DAS_roadSignColor"), "unknown") if sign_valid else "unknown",
+      "stop_line_distance_m": _round(stop_line_distance) if sign_valid and stop_line_distance < 184.6 else None,
       "road_sign_active": _bool(sign, "DAS_roadSignControlActive"),
-      "road_sign_source": ROAD_SIGN_SOURCES.get(_int(sign, "DAS_roadSignSource"), "unknown") if sign_frame else "unknown",
-      "road_sign_arrow": ROAD_SIGN_ARROWS.get(_int(sign, "DAS_roadSignArrow"), "unknown") if sign_frame else "unknown",
+      "road_sign_source": ROAD_SIGN_SOURCES.get(_int(sign, "DAS_roadSignSource"), "unknown") if sign_valid else "unknown",
+      "road_sign_arrow": ROAD_SIGN_ARROWS.get(_int(sign, "DAS_roadSignArrow"), "unknown") if sign_valid else "unknown",
       "road_sign_orientation": _int(sign, "DAS_roadSignOrientation"),
       "sources": sorted(filter(None, (self._bus(control_frame), self._bus(sign_frame)))),
     }

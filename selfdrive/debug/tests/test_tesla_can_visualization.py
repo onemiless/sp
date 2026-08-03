@@ -108,3 +108,89 @@ def test_tesla_can_visualization_reset_discards_cached_vehicle_data():
 
   visualization.reset()
   assert not visualization.snapshot(1_100_000_000)["available"]
+
+
+def test_tesla_can_visualization_hides_idle_traffic_control_without_light():
+  """A fresh control/sign frame is not proof of a traffic light: idle/SNA
+  values must not render as a green light a few meters ahead."""
+  packer = CANPacker("tesla_modely_hw4_perception")
+  frames = [
+    _frame(packer, "APP_trafficControl", 0, {
+      "APP_tcFeatureState": 0,
+      "APP_tcStateMachine": 0,
+      "APP_tcControlType": 1,
+      "APP_tcControlDistance": 1,
+      "APP_tcControlLightState": 2,
+    }),
+    _frame(packer, "DAS_object", 2, {
+      "DAS_objectId": 4,
+      "DAS_roadSignId": 255,
+      "DAS_roadSignStopLineDist": 1.0,
+      "DAS_roadSignControlActive": 0,
+      "DAS_roadSignSource": 0,
+    }),
+  ]
+  visualization = TeslaCanVisualization()
+  visualization.update([(1_000_000_000, frames)])
+
+  traffic = visualization.snapshot(1_100_000_000)["traffic"]
+  assert traffic["control_frame_fresh"]
+  assert traffic["sign_frame_fresh"]
+  assert not traffic["available"]
+  assert not traffic["control_available"]
+  assert not traffic["road_sign_available"]
+  assert traffic["light_state"] == "unknown"
+  assert traffic["control_distance_m"] is None
+  assert traffic["stop_line_distance_m"] is None
+
+
+def test_tesla_can_visualization_traffic_light_sign_gates_stop_line_and_arrow():
+  packer = CANPacker("tesla_modely_hw4_perception")
+  visualization = TeslaCanVisualization()
+
+  def sign_traffic(sign_values):
+    visualization.reset()
+    visualization.update([(1_000_000_000, [_frame(packer, "DAS_object", 2, {"DAS_objectId": 4, **sign_values})])])
+    return visualization.snapshot(1_100_000_000)["traffic"]
+
+  invalid = sign_traffic({
+    "DAS_roadSignId": 255,
+    "DAS_roadSignStopLineDist": 30,
+    "DAS_roadSignSource": 0,
+  })
+  assert not invalid["road_sign_available"]
+  assert invalid["stop_line_distance_m"] is None
+
+  valid = sign_traffic({
+    "DAS_roadSignId": 1,
+    "DAS_roadSignStopLineDist": 30,
+    "DAS_roadSignColor": 1,
+    "DAS_roadSignArrow": 1,
+    "DAS_roadSignSource": 2,
+    "DAS_roadSignControlActive": 1,
+  })
+  assert valid["road_sign_available"]
+  assert valid["stop_line_distance_m"] == 30
+  assert valid["road_sign_arrow"] == "left"
+  assert valid["road_sign_color"] == "red"
+
+
+def test_tesla_can_visualization_rear_uses_live_flags_not_trip_latches():
+  packer = CANPacker("tesla_modely_hw4_perception")
+
+  def rear_snapshot(**flags):
+    visualization = TeslaCanVisualization()
+    visualization.update([(1_000_000_000, [_frame(packer, "DAS_visualDebug", 2, flags)])])
+    return visualization.snapshot(1_100_000_000)["rear_vehicles"]
+
+  only_trip = rear_snapshot(DAS_rearLeftVehDetectedTrip=1, DAS_rearRightVehDetectedTrip=1)
+  assert not only_trip["left_live"]
+  assert not only_trip["right_live"]
+
+  left_now = rear_snapshot(DAS_rearLeftVehDetectedCurrent=1)
+  assert left_now["left_live"]
+  assert not left_now["right_live"]
+
+  right_now = rear_snapshot(DAS_rearVehDetectedThisCycle=1, DAS_rearRightVehDetectedTrip=1)
+  assert right_now["right_live"]
+  assert not right_now["left_live"]
