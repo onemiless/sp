@@ -194,3 +194,87 @@ def test_tesla_can_visualization_rear_uses_live_flags_not_trip_latches():
   right_now = rear_snapshot(DAS_rearVehDetectedThisCycle=1, DAS_rearRightVehDetectedTrip=1)
   assert right_now["right_live"]
   assert not right_now["left_live"]
+
+
+def test_tesla_can_visualization_decodes_road_sign_pedestrian_blind_spot_and_front_safety():
+  packer = CANPacker("tesla_modely_hw4_perception")
+  frames = [
+    _frame(packer, "UI_driverAssistRoadSign", 2, {
+      "UI_roadSign": 1,
+      "UI_stopSignStopLineDist": 12.0,
+      "UI_stopSignStopLineConf": 100,
+    }),
+    _frame(packer, "UI_driverAssistRoadSign", 2, {
+      "UI_roadSign": 2,
+      "UI_trafficLightStopLineDist": 30.0,
+      "UI_trafficLightStopLineConf": 90,
+    }),
+    _frame(packer, "APP_pedestrianDetection", 1, {
+      "APP_pedestrianDetectedFrontMain": 1,
+      "APP_pedestrianDetectedBackup": 1,
+      "APP_closestPedestrian1dX": 3.2,
+      "APP_closestPedestrian1dY": -1.6,
+      "APP_closestPedestrian2dX": 5.0,
+    }),
+    _frame(packer, "DAS_status", 0, {
+      "DAS_blindSpotRearLeft": 2,
+      "DAS_blindSpotRearRight": 1,
+      "DAS_sideCollisionWarning": 1,
+      "DAS_forwardCollisionWarning": 1,
+    }),
+    _frame(packer, "DAS_integratedSafetyFront", 0, {
+      "DAS_targetDistanceFront": 12.0,
+      "DAS_relativeVelocityFront": -4.0,
+      "DAS_timeToImpactFront": 30,
+      "DAS_predictedImpactOvrlapFront": 62.5,
+    }),
+  ]
+  visualization = TeslaCanVisualization()
+  visualization.update([(1_000_000_000, frames)])
+
+  scene = visualization.snapshot(1_100_000_000)
+  road_sign = scene["road_sign"]
+  assert road_sign["available"]
+  assert road_sign["stop_sign_stop_line_distance_m"] == 12.0
+  assert road_sign["stop_sign_stop_line_confidence"] == 100
+  assert road_sign["traffic_light_stop_line_distance_m"] == 30.0
+  assert road_sign["traffic_light_stop_line_confidence"] == 90
+
+  pedestrians = scene["pedestrian_detection"]
+  assert pedestrians["available"]
+  assert pedestrians["front_main"]
+  assert pedestrians["backup"]
+  assert pedestrians["closest"][0]["x_m"] == 3.2
+  assert pedestrians["closest"][0]["y_m"] == -1.6
+
+  blind_spot = scene["blind_spot"]
+  assert blind_spot["available"]
+  assert blind_spot["left_level"] == 2
+  assert blind_spot["right_level"] == 1
+  assert blind_spot["left_live"]
+  assert blind_spot["right_live"]
+  assert blind_spot["side_collision_warning_level"] == 1
+  assert blind_spot["forward_collision_warning_level"] == 1
+
+  front_safety = scene["front_safety"]
+  assert front_safety["available"]
+  assert front_safety["target_distance_m"] == 12.0
+  assert front_safety["relative_velocity_mps"] == -4.0
+  assert front_safety["time_to_impact_s"] == 30.0
+  assert front_safety["predicted_impact_overlap_pct"] == 62.5
+
+
+def test_tesla_can_visualization_gates_road_sign_stop_line_sna():
+  """Idle/SNA road sign frames must not produce a bogus stop line distance."""
+  packer = CANPacker("tesla_modely_hw4_perception")
+  visualization = TeslaCanVisualization()
+  visualization.update([(1_000_000_000, [_frame(packer, "UI_driverAssistRoadSign", 2, {
+    "UI_roadSign": 2,
+    "UI_trafficLightStopLineDist": -8.0,
+    "UI_trafficLightStopLineConf": 0,
+  })])])
+
+  road_sign = visualization.snapshot(1_100_000_000)["road_sign"]
+  assert road_sign["available"]
+  assert road_sign["traffic_light_stop_line_distance_m"] is None
+  assert road_sign["traffic_light_stop_line_confidence"] is None

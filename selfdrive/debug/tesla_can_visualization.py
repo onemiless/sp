@@ -18,6 +18,11 @@ MESSAGE_NAMES = (
   "DAS_visualDebug",
   "DAS_lanes",
   "APP_trafficControl",
+  "UI_driverAssistRoadSign",
+  "APP_pedestrianDetection",
+  "DAS_status",
+  "DAS_statusCH",
+  "DAS_integratedSafetyFront",
   "DAS_object",
 )
 BUS_NAMES = {0: "PARTY", 1: "VEH", 2: "AP"}
@@ -79,10 +84,12 @@ class TeslaCanVisualization:
     self.parsers = {bus: CANParser(DBC_NAME, optional_messages, bus) for bus in buses}
     self.frames: dict[str, tuple[dict[str, float], int, int]] = {}
     self.object_frames: dict[int, tuple[dict[str, float], int, int]] = {}
+    self.road_sign_frames: dict[int, tuple[dict[str, float], int, int]] = {}
 
   def reset(self) -> None:
     self.frames.clear()
     self.object_frames.clear()
+    self.road_sign_frames.clear()
 
   def update(self, can_packets: list[tuple[int, list[tuple[int, bytes, int]]]]) -> None:
     if not can_packets:
@@ -90,6 +97,8 @@ class TeslaCanVisualization:
     for bus, parser in self.parsers.items():
       updated = parser.update(can_packets)
       for name in MESSAGE_NAMES[:-1]:
+        if name == "UI_driverAssistRoadSign":
+          continue
         message = parser.dbc.name_to_msg[name]
         if message.address not in updated:
           continue
@@ -97,6 +106,22 @@ class TeslaCanVisualization:
         previous = self.frames.get(name)
         if timestamp and (previous is None or timestamp >= previous[1]):
           self.frames[name] = (dict(parser.vl[name]), timestamp, bus)
+
+      # UI_driverAssistRoadSign is multiplexed on UI_roadSign (1=stop sign
+      # group, 2=traffic light group, 3/4=map/fleet speed groups, 5=spline id).
+      road_sign_address = parser.dbc.name_to_msg["UI_driverAssistRoadSign"].address
+      if road_sign_address in updated:
+        all_values = parser.vl_all["UI_driverAssistRoadSign"]
+        mux_ids = all_values.get("UI_roadSign", [])
+        timestamp = max(parser.ts_nanos["UI_driverAssistRoadSign"].values(), default=0)
+        for index, mux_value in enumerate(mux_ids):
+          mux_id = int(mux_value)
+          if mux_id not in (1, 2, 3, 4, 5):
+            continue
+          values = {name: samples[index] for name, samples in all_values.items() if index < len(samples)}
+          previous = self.road_sign_frames.get(mux_id)
+          if timestamp and (previous is None or timestamp >= previous[1]):
+            self.road_sign_frames[mux_id] = (values, timestamp, bus)
 
       object_address = parser.dbc.name_to_msg["DAS_object"].address
       if object_address not in updated:
@@ -352,6 +377,135 @@ class TeslaCanVisualization:
       "ulc_type": _int(values, "DAS_ulcType"),
     }
 
+  def _road_sign_mux_frame(self, mux: int, now_ns: int) -> tuple[dict[str, float], int, int] | None:
+    frame = self.road_sign_frames.get(mux)
+    return frame if self._fresh(frame, now_ns) else None
+
+  def _road_sign(self, now_ns: int) -> dict[str, Any]:
+    any_frame = None
+    for frame in self.road_sign_frames.values():
+      if self._fresh(frame, now_ns) and (any_frame is None or frame[1] >= any_frame[1]):
+        any_frame = frame
+    stop_frame = self._road_sign_mux_frame(1, now_ns)
+    light_frame = self._road_sign_mux_frame(2, now_ns)
+    map_frame = self._road_sign_mux_frame(3, now_ns)
+    fleet_frame = self._road_sign_mux_frame(4, now_ns)
+    values = any_frame[0] if any_frame else {}
+
+    def _stop_line(frame, name):
+      if not frame:
+        return None
+      value = float(frame[0].get(name, -8.0))
+      return _round(value) if 0.0 <= value < 200.0 else None
+
+    def _confidence(frame, name):
+      if not frame:
+        return None
+      confidence = _int(frame[0], name)
+      return confidence if 0 < confidence < 127 else None
+
+    def _speed(frame, name):
+      if not frame:
+        return None
+      value = float(frame[0].get(name, 0.0))
+      return _round(value) if value > 0.0 else None
+
+    return {
+      "available": bool(any_frame),
+      "bus": self._bus(any_frame),
+      "road_sign_id": _int(values, "UI_roadSign") if any_frame else None,
+      "stop_sign_stop_line_distance_m": _stop_line(stop_frame, "UI_stopSignStopLineDist"),
+      "stop_sign_stop_line_confidence": _confidence(stop_frame, "UI_stopSignStopLineConf"),
+      "traffic_light_stop_line_distance_m": _stop_line(light_frame, "UI_trafficLightStopLineDist"),
+      "traffic_light_stop_line_confidence": _confidence(light_frame, "UI_trafficLightStopLineConf"),
+      "base_map_speed_limit_mps": _speed(map_frame, "UI_baseMapSpeedLimitMPS"),
+      "bottom_quartile_fleet_speed_mps": _speed(map_frame, "UI_bottomQrtlFleetSpeedMPS"),
+      "top_quartile_fleet_speed_mps": _speed(map_frame, "UI_topQrtlFleetSpeedMPS"),
+      "mean_fleet_spline_speed_mps": _speed(fleet_frame, "UI_meanFleetSplineSpeedMPS"),
+      "median_fleet_spline_speed_mps": _speed(fleet_frame, "UI_medianFleetSplineSpeedMPS"),
+      "ramp_type": _int(fleet_frame[0], "UI_rampType") if fleet_frame else None,
+      "spline_location_confidence": _int(values, "UI_splineLocConfidence") if any_frame else None,
+    }
+
+  def _pedestrian_detection(self, now_ns: int) -> dict[str, Any]:
+    frame = self._frame("APP_pedestrianDetection", now_ns)
+    values = frame[0] if frame else {}
+    closest = []
+    for index in (1, 2, 3):
+      x = float(values.get(f"APP_closestPedestrian{index}dX", 0.0))
+      y = float(values.get(f"APP_closestPedestrian{index}dY", 0.0))
+      if x != 0.0 or y != 0.0:
+        closest.append({"index": index, "x_m": _round(x), "y_m": _round(y)})
+    flags = {
+      "front_main": _bool(values, "APP_pedestrianDetectedFrontMain"),
+      "front_fisheye": _bool(values, "APP_pedestrianDetectedFrontFisheye"),
+      "front_narrow": _bool(values, "APP_pedestrianDetectedFrontNarrow"),
+      "left_pillar": _bool(values, "APP_pedestrianDetectedLeftPillar"),
+      "left_repeater": _bool(values, "APP_pedestrianDetectedLeftRepeater"),
+      "right_pillar": _bool(values, "APP_pedestrianDetectedRightPillar"),
+      "right_repeater": _bool(values, "APP_pedestrianDetectedRightRepeater"),
+      "backup": _bool(values, "APP_pedestrianDetectedBackup"),
+    }
+    return {
+      "available": bool(frame),
+      "bus": self._bus(frame),
+      **flags,
+      "detected_any": bool(frame) and any(flags.values()),
+      "closest": closest,
+    }
+
+  def _blind_spot(self, now_ns: int) -> dict[str, Any]:
+    frames = []
+    for name in ("DAS_status", "DAS_statusCH"):
+      frame = self._frame(name, now_ns)
+      if frame is not None:
+        frames.append(frame)
+    frame = max(frames, key=lambda item: item[1]) if frames else None
+    values = frame[0] if frame else {}
+    left = _int(values, "DAS_blindSpotRearLeft")
+    right = _int(values, "DAS_blindSpotRearRight")
+    return {
+      "available": bool(frame),
+      "bus": self._bus(frame),
+      "sources": sorted(source for source in (self._bus(item) for item in frames) if source),
+      "left_level": left if frame else None,
+      "right_level": right if frame else None,
+      "left_live": left in (1, 2) if frame else False,
+      "right_live": right in (1, 2) if frame else False,
+      "side_collision_avoid_level": _int(values, "DAS_sideCollisionAvoid") if frame else None,
+      "side_collision_warning_level": _int(values, "DAS_sideCollisionWarning") if frame else None,
+      "side_collision_inhibit": _bool(values, "DAS_sideCollisionInhibit") if frame else False,
+      "forward_collision_warning_level": _int(values, "DAS_forwardCollisionWarning") if frame else None,
+      "lane_departure_warning_level": _int(values, "DAS_laneDepartureWarning") if frame else None,
+      "autopilot_state": _int(values, "DAS_autopilotState") if frame else None,
+      "fused_speed_limit_kph": _round(float(values.get("DAS_fusedSpeedLimit", 0.0))) if frame else None,
+    }
+
+  def _front_safety(self, now_ns: int) -> dict[str, Any]:
+    frame = self._frame("DAS_integratedSafetyFront", now_ns)
+    values = frame[0] if frame else {}
+    distance = float(values.get("DAS_targetDistanceFront", 0.0))
+    target_present = bool(frame) and distance > 0.0
+    relative_velocity = float(values.get("DAS_relativeVelocityFront", 0.0))
+    relative_accel = float(values.get("DAS_relativeAccelerationFront", 0.0))
+    time_to_impact = float(values.get("DAS_timeToImpactFront", 0.0))
+    impact_velocity = float(values.get("DAS_predictedImpactVelFront", 0.0))
+    impact_overlap = float(values.get("DAS_predictedImpactOvrlapFront", 0.0))
+    return {
+      "available": bool(frame),
+      "bus": self._bus(frame),
+      "target_distance_m": _round(distance) if target_present else None,
+      "target_distance_quality": _bool(values, "DAS_targetDistanceFrontQF") if frame else False,
+      "relative_velocity_mps": _round(relative_velocity) if target_present and relative_velocity > -32.0 else None,
+      "relative_velocity_quality": _bool(values, "DAS_relativeVelocityFrontQF") if frame else False,
+      "relative_acceleration_mps2": _round(relative_accel) if target_present and relative_accel > -12.8 else None,
+      "time_to_impact_s": _round(time_to_impact) if target_present and time_to_impact > 0.0 else None,
+      "imminent_collision": _bool(values, "DAS_imminentCollisionFront") if frame else False,
+      "predicted_impact_velocity_mps": _round(impact_velocity) if target_present and impact_velocity > 0.0 else None,
+      "predicted_impact_overlap_pct": _round(impact_overlap) if target_present and impact_overlap > 0.0 else None,
+      "idf_enabled": _bool(values, "DAS_idfEnableFlag") if frame else False,
+    }
+
   def snapshot(self, now_ns: int | None = None) -> dict[str, Any]:
     now_ns = time.monotonic_ns() if now_ns is None else now_ns
     navigation = self._navigation(now_ns)
@@ -359,15 +513,24 @@ class TeslaCanVisualization:
     vehicles, rear, vehicle_sources = self._vehicles(now_ns)
     traffic = self._traffic(now_ns)
     driver_assist = self._driver_assist(now_ns)
+    road_sign = self._road_sign(now_ns)
+    pedestrian_detection = self._pedestrian_detection(now_ns)
+    blind_spot = self._blind_spot(now_ns)
+    front_safety = self._front_safety(now_ns)
     buses = sorted({
       *(navigation.get("sources") or []),
       *(traffic.get("sources") or []),
       *vehicle_sources,
       *([lanes["bus"]] if lanes.get("bus") else []),
       *([driver_assist["bus"]] if driver_assist.get("bus") else []),
+      *([road_sign["bus"]] if road_sign.get("bus") else []),
+      *([pedestrian_detection["bus"]] if pedestrian_detection.get("bus") else []),
+      *([blind_spot["bus"]] if blind_spot.get("bus") else []),
+      *([front_safety["bus"]] if front_safety.get("bus") else []),
     })
     return {
-      "available": bool(navigation["available"] or lanes["available"] or vehicles or traffic["available"] or driver_assist["available"]),
+      "available": bool(navigation["available"] or lanes["available"] or vehicles or traffic["available"] or driver_assist["available"]
+                        or road_sign["available"] or pedestrian_detection["available"] or blind_spot["available"] or front_safety["available"]),
       "dbc": DBC_NAME,
       "buses": buses,
       "navigation": navigation,
@@ -376,6 +539,10 @@ class TeslaCanVisualization:
       "rear_vehicles": rear,
       "traffic": traffic,
       "driver_assist": driver_assist,
+      "road_sign": road_sign,
+      "pedestrian_detection": pedestrian_detection,
+      "blind_spot": blind_spot,
+      "front_safety": front_safety,
       "pedestrians": [vehicle for vehicle in vehicles if vehicle["type"] == "pedestrian"],
       "cyclists": [vehicle for vehicle in vehicles if vehicle["type"] in ("bicycle", "motorcycle")],
     }
