@@ -1,0 +1,50 @@
+import glob
+import os
+import sys
+
+from SCons.Script import Action, Value
+
+from openpilot.common.file_chunker import chunk_file, get_chunk_targets
+
+
+Import('env', 'arch')
+lenv = env.Clone()
+objectd_dir = Dir('#openpilot/selfdrive/objectd').abspath
+models_dir = Dir('#openpilot/selfdrive/objectd/models').abspath
+tinygrad_root = env.Dir('#').abspath
+tinygrad_files = ['#' + path for path in glob.glob(env.Dir('#tinygrad_repo').relpath + '/**', recursive=True, root_dir=tinygrad_root)
+                  if 'pycache' not in path and os.path.isfile(os.path.join(tinygrad_root, path))]
+
+manifest = File(f'{models_dir}/object_detector_manifest.json')
+fetch_script = File(f'{objectd_dir}/fetch_object_model.py')
+onnx_path = File(f'{models_dir}/object_detector.onnx').abspath
+
+onnx_node = lenv.Command(
+  onnx_path,
+  [manifest, fetch_script],
+  f'{sys.executable} {fetch_script.abspath} --manifest {manifest.abspath} --output {onnx_path}',
+)
+
+if arch == 'larch64':
+  tg_flags = 'DEV=QCOM IMAGE=1 FLOAT16=1 NOLOCALS=1 JIT_BATCH_SIZE=0 OPENPILOT_HACKS=1'
+elif arch == 'Darwin':
+  tg_flags = 'DEV=CPU'
+else:
+  tg_flags = 'DEV=CPU:LLVM'
+
+pkl_path = File(f'{models_dir}/object_detector_tinygrad.pkl').abspath
+# Two 45 MiB chunks are a conservative bound for this 3.7 MiB ONNX model.
+chunk_targets = get_chunk_targets(pkl_path, 90 * 1024 * 1024)
+compile_script = File(f'{objectd_dir}/compile_object_model.py')
+compile3_script = File('#tinygrad_repo/examples/openpilot/compile3.py')
+
+def do_chunk(target, source, env):
+  chunk_file(pkl_path, chunk_targets)
+
+lenv.Command(
+  chunk_targets,
+  tinygrad_files + onnx_node + [manifest, compile_script, compile3_script, Value(tg_flags), Value(chunk_targets)],
+  [f'{tg_flags} PYTHONPATH={Dir("#tinygrad_repo").abspath} {sys.executable} {compile_script.abspath} '
+   f'--onnx {onnx_path} --manifest {manifest.abspath} --output {pkl_path} --compile3 {compile3_script.abspath}',
+   Action(do_chunk, '  [CHUNK] $TARGET')],
+)
