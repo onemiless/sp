@@ -472,7 +472,103 @@ struct ModelDataV2SP @0xa1680744031fdb2d {
   }
 }
 
-struct CustomReserved10 @0xcb9fd56c7057593a {
+struct VisionObjectStateSP @0xcb9fd56c7057593a {
+  schemaVersion @0 :UInt16;
+  state @1 :State;
+  streamType @2 :StreamType;
+  sourceWidth @3 :UInt16;
+  sourceHeight @4 :UInt16;
+  sourceFrameId @5 :UInt32;
+  sourceTimestampEof @6 :UInt64;
+  publishMonoTime @7 :UInt64;
+  inferenceUpdated @8 :Bool;
+  inferenceDurationMs @9 :Float32;
+  resultAgeMs @10 :Float32;
+  resultValid @11 :Bool;
+  modelHash @12 :Text;
+  positionOrigin @13 :PositionOrigin;
+  vehicleExtrinsicsValid @14 :Bool;
+  roadPlaneValid @15 :Bool;
+  distanceMode @16 :DistanceMode;
+  objects @17 :List(VisionObject);
+  droppedObjectCount @18 :UInt16;
+  errorCode @19 :ErrorCode;
+  inferenceFrequencyHz @20 :Float32;
+
+  enum State {
+    disabled @0;
+    warmingUp @1;
+    running @2;
+    degraded @3;
+    sessionFused @4;
+  }
+
+  enum StreamType {
+    road @0;
+    wide @1;
+  }
+
+  enum PositionOrigin {
+    frontBumperGroundCenter @0;
+  }
+
+  enum DistanceMode {
+    invalid @0;
+    metric @1;
+    coarse @2;
+  }
+
+  enum ErrorCode {
+    none @0;
+    timeout @1;
+    modelLoad @2;
+    thermal @3;
+    memory @4;
+    stale @5;
+    streamMismatch @6;
+    calibration @7;
+    circuitBreaker @8;
+  }
+
+  struct VisionObject {
+    trackId @0 :UInt32;
+    classId @1 :UInt16;
+    confidence @2 :Float32;
+    bboxNormalized @3 :List(Float32);
+    bboxVelocityNormalized @4 :List(Float32);
+    bboxPredictionValid @5 :Bool;
+    bboxClipped @6 :Bool;
+    contactU @7 :Float32;
+    contactV @8 :Float32;
+    contactPointValid @9 :Bool;
+    x @10 :Float32;
+    y @11 :Float32;
+    z @12 :Float32;
+    positionStd @13 :List(Float32);
+    distance @14 :Float32;
+    distanceStd @15 :Float32;
+    distanceValid @16 :Bool;
+    rangeBand @17 :RangeBand;
+    relativeSpeed @18 :Float32;
+    relativeSpeedValid @19 :Bool;
+    ttc @20 :Float32;
+    ttcValid @21 :Bool;
+    corridorState @22 :CorridorState;
+  }
+
+  enum RangeBand {
+    unknown @0;
+    near @1;
+    medium @2;
+    far @3;
+  }
+
+  enum CorridorState {
+    unknown @0;
+    outside @1;
+    overlap @2;
+    inside @3;
+  }
 }
 
 struct CustomReserved11 @0xc2243c65e0340384 {
