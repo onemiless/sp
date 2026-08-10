@@ -1,0 +1,54 @@
+import unittest
+
+from openpilot.selfdrive.objectd.ui_contract import OverlayGateInput, map_normalized_bbox, should_render_overlay
+
+
+def valid_input(**overrides):
+  values = {
+    "current_stream_road": True, "message_stream_road": True, "service_alive": True, "service_valid": True,
+    "state": "running", "result_valid": True, "debug": False, "inference_frequency_hz": 5.0,
+    "current_frame_id": 105, "source_frame_id": 100, "current_timestamp_eof": 1_200_000_000,
+    "source_timestamp_eof": 1_000_000_000, "publish_age_ms": 220.0,
+  }
+  values.update(overrides)
+  return OverlayGateInput(**values)
+
+
+class TestOverlayGate(unittest.TestCase):
+  def test_valid_road_message(self):
+    self.assertTrue(should_render_overlay(valid_input()))
+
+  def test_wide_always_hidden(self):
+    self.assertFalse(should_render_overlay(valid_input(current_stream_road=False)))
+    self.assertFalse(should_render_overlay(valid_input(message_stream_road=False)))
+
+  def test_stale_or_future_frame_hidden(self):
+    self.assertFalse(should_render_overlay(valid_input(publish_age_ms=301.0)))
+    self.assertFalse(should_render_overlay(valid_input(current_frame_id=99)))
+    self.assertFalse(should_render_overlay(valid_input(current_frame_id=107)))
+
+  def test_low_frequency_only_debug(self):
+    self.assertFalse(should_render_overlay(valid_input(state="degraded", result_valid=False, inference_frequency_hz=2.0)))
+    self.assertTrue(should_render_overlay(valid_input(state="degraded", result_valid=False, debug=True, inference_frequency_hz=2.0)))
+
+
+class TestBboxMapping(unittest.TestCase):
+  def test_road_1928x1208_letterbox_corners_and_center(self):
+    # CameraView renders a 1928x1208 ROAD frame centered inside this square viewport.
+    scale = (1.0, (1208 / 1928))
+    full = map_normalized_bbox((0.0, 0.0, 1.0, 1.0), (10.0, 20.0, 1000.0, 1000.0), scale)
+    self.assertIsNotNone(full)
+    self.assertAlmostEqual(full[0], 10.0)
+    self.assertAlmostEqual(full[1], 20.0 + (1000.0 - 1000.0 * scale[1]) / 2.0)
+    self.assertAlmostEqual(full[2], 1000.0)
+    self.assertAlmostEqual(full[3], 1000.0 * scale[1])
+    center = map_normalized_bbox((0.49, 0.49, 0.51, 0.51), (10.0, 20.0, 1000.0, 1000.0), scale)
+    self.assertAlmostEqual(center[0] + center[2] / 2.0, 510.0)
+    self.assertAlmostEqual(center[1] + center[3] / 2.0, 520.0)
+
+  def test_invalid_bbox_rejected(self):
+    self.assertIsNone(map_normalized_bbox((0.8, 0.1, 0.2, 0.5), (0.0, 0.0, 100.0, 100.0), (1.0, 1.0)))
+
+
+if __name__ == "__main__":
+  unittest.main()
