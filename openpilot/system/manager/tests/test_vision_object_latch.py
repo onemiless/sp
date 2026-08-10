@@ -1,0 +1,44 @@
+import unittest
+
+from openpilot.system.manager.vision_object_latch import VisionObjectSessionLatch
+
+
+class FakeParams:
+  def __init__(self, enabled):
+    self.enabled = enabled
+
+  def get_bool(self, key):
+    assert key == "VisionObjectDetectionEnabled"
+    return self.enabled
+
+
+class FakeCP:
+  def __init__(self, brand):
+    self.brand = brand
+
+
+class TestVisionObjectSessionLatch(unittest.TestCase):
+  def test_only_tizi_tesla_enabled_on_rising_edge(self):
+    latch = VisionObjectSessionLatch(lambda: "tizi")
+    params = FakeParams(True)
+    self.assertFalse(latch(False, params, FakeCP("tesla")))
+    self.assertTrue(latch(True, params, FakeCP("tesla")))
+
+  def test_onroad_param_changes_do_not_change_session(self):
+    latch = VisionObjectSessionLatch(lambda: "tizi")
+    params = FakeParams(True)
+    self.assertTrue(latch(True, params, FakeCP("tesla")))
+    params.enabled = False
+    self.assertTrue(latch(True, params, FakeCP("tesla")))
+    self.assertFalse(latch(False, params, FakeCP("tesla")))
+    params.enabled = True
+    self.assertTrue(latch(True, params, FakeCP("tesla")))
+
+  def test_disabled_wrong_device_or_brand(self):
+    self.assertFalse(VisionObjectSessionLatch(lambda: "tici")(True, FakeParams(True), FakeCP("tesla")))
+    self.assertFalse(VisionObjectSessionLatch(lambda: "tizi")(True, FakeParams(True), FakeCP("toyota")))
+    self.assertFalse(VisionObjectSessionLatch(lambda: "tizi")(True, FakeParams(False), FakeCP("tesla")))
+
+
+if __name__ == "__main__":
+  unittest.main()
