@@ -14,6 +14,7 @@ from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.tuning_presets import
   MPC_PRESET_LABELS, MPC_PRESET_MOUMOU, MPC_TUNING_KEYS, apply_preset, get_preset_values, save_preset_values, write_live_values,
 )
 from openpilot.selfdrive.ui.ui_state import ui_state
+from openpilot.common.hardware import HARDWARE
 from openpilot.system.ui.lib.application import gui_app
 from openpilot.system.ui.lib.multilang import tr
 from openpilot.system.ui.sunnypilot.widgets.list_view import button_item_sp, multiple_button_item_sp, option_item_sp, toggle_item_sp
@@ -189,6 +190,28 @@ class TeslaMpcSettingsLayout(Widget):
 class TeslaSettings(BrandSettings):
   def __init__(self):
     super().__init__()
+    self.vision_object_detection_toggle = toggle_item_sp(
+      title=tr("Vision Object Detection"),
+      param="VisionObjectDetectionEnabled",
+      description=tr("Runs an experimental ROAD-camera object detector on C3X. Display only; never used for vehicle control."),
+      enabled=ui_state.is_offroad,
+    )
+    self.vision_object_overlay_toggle = toggle_item_sp(
+      title=tr("Vision Object Overlay"),
+      param="VisionObjectOverlay",
+      description=tr("Draw detected public-model classes on the ROAD camera. The overlay is hidden immediately on WIDE camera."),
+    )
+    self.vision_object_distance_toggle = toggle_item_sp(
+      title=tr("Approximate Object Distance"),
+      param="VisionObjectDistanceDisplay",
+      description=tr("Experimental monocular estimate. Unavailable until vehicle geometry and road-plane validation are complete."),
+      enabled=lambda: False,
+    )
+    self.vision_object_debug_toggle = toggle_item_sp(
+      title=tr("Vision Object Debug Overlay"),
+      param="VisionObjectDebugOverlay",
+      description=tr("Shows source age, track IDs, and degraded low-frequency detector output for development."),
+    )
     self.coop_steering_toggle = toggle_item_sp(tr("Cooperative Steering"), "", param="TeslaCoopSteering")
     self.mads_screen_button = multiple_button_item_sp(
       title=lambda: tr("MADS Screen Activation"),
@@ -293,7 +316,9 @@ class TeslaSettings(BrandSettings):
       callback=self._show_mpc_settings,
       enabled=ui_state.is_offroad,
     )
-    self.items = [self.coop_steering_toggle, self.mads_screen_button, self.touch_longitudinal_switch_toggle,
+    self.items = [self.vision_object_detection_toggle, self.vision_object_overlay_toggle,
+                  self.vision_object_distance_toggle, self.vision_object_debug_toggle,
+                  self.coop_steering_toggle, self.mads_screen_button, self.touch_longitudinal_switch_toggle,
                   # self.camera_offset, self.reset_camera_offset,  # moved to Models -> Adjust Camera Offset
                   self.ap_hybrid_toggle, self.dynamic_ap_longitudinal_toggle,
                   self.dynamic_auto_stock_toggle,
@@ -322,6 +347,15 @@ class TeslaSettings(BrandSettings):
     gui_app.push_widget(TeslaMpcSettingsLayout(lambda: gui_app.pop_widget()))
 
   def update_settings(self):
+    is_c3x = HARDWARE.get_device_type() == "tizi"
+    for item in (self.vision_object_detection_toggle, self.vision_object_overlay_toggle,
+                 self.vision_object_distance_toggle, self.vision_object_debug_toggle):
+      item.set_visible(is_c3x)
+    self.vision_object_detection_toggle.action_item.set_enabled(is_c3x and ui_state.is_offroad())
+    self.vision_object_overlay_toggle.action_item.set_enabled(is_c3x)
+    self.vision_object_distance_toggle.action_item.set_enabled(False)
+    self.vision_object_debug_toggle.action_item.set_enabled(is_c3x and not ui_state.is_sp_release)
+
     coop_steering_desc = (
       f"{tr('Converts light steering input into steering-wheel rotation.')}<br>" +
       f"{tr('The faster you go, the stiffer the steering gets.')}"

@@ -33,7 +33,8 @@ class UIStateSP:
     self.is_sp_release: bool = self.params.get_bool("IsReleaseSpBranch")
     self.sm_services_ext = [
       "modelManagerSP", "selfdriveStateSP", "longitudinalPlanSP", "backupManagerSP",
-      "gpsLocation", "liveTorqueParameters", "carStateSP", "liveMapDataSP", "carParamsSP", "liveDelay"
+      "gpsLocation", "liveTorqueParameters", "carStateSP", "liveMapDataSP", "carParamsSP", "liveDelay",
+      "visionObjectStateSP"
     ]
 
     self.sunnylink_state = SunnylinkState()
@@ -57,6 +58,9 @@ class UIStateSP:
     self.enforce_torque_control: bool = False
     self.custom_torque_params: bool = False
     self.torque_override_enabled: bool = False
+    self.vision_object_overlay: bool = False
+    self.vision_object_distance_display: bool = False
+    self.vision_object_debug_overlay: bool = False
     self._sp_initialized: bool = False
 
   def update(self) -> None:
@@ -169,6 +173,9 @@ class UIStateSP:
     self.turn_signals = self.params.get_bool("ShowTurnSignals")
     self.boot_offroad_mode = self.params.get("DeviceBootMode", return_default=True)
     self.always_offroad = self.params.get_bool("OffroadMode")
+    self.vision_object_overlay = self.params.get_bool("VisionObjectOverlay")
+    self.vision_object_distance_display = self.params.get_bool("VisionObjectDistanceDisplay")
+    self.vision_object_debug_overlay = self.params.get_bool("VisionObjectDebugOverlay")
 
     if not self._sp_initialized:
       self._sp_initialized = True

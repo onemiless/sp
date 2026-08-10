@@ -5,6 +5,7 @@ import pyray as rl
 from msgq.visionipc import VisionIpcClient, VisionStreamType, VisionBuf
 from openpilot.common.swaglog import cloudlog
 from openpilot.common.hardware import TICI
+from openpilot.selfdrive.objectd.ui_contract import map_normalized_bbox
 from openpilot.system.ui.lib.application import gui_app
 from openpilot.system.ui.lib.egl import init_egl, create_egl_image, destroy_egl_image, bind_egl_image_to_texture, EGLImage
 from openpilot.system.ui.widgets import Widget
@@ -85,6 +86,8 @@ class CameraView(Widget):
     self._texture1_loc: int = rl.get_shader_location(self.shader, "texture1") if not TICI else -1
 
     self.frame: VisionBuf | None = None
+    self._display_frame_id: int = 0
+    self._display_timestamp_eof: int = 0
     self.texture_y: rl.Texture | None = None
     self.texture_uv: rl.Texture | None = None
 
@@ -113,6 +116,8 @@ class CameraView(Widget):
       # which drains the VisionIpcClient SubSocket for us. Re-connecting is not enough
       # and only clears internal buffers, not the message queue.
       self.frame = None
+      self._display_frame_id = 0
+      self._display_timestamp_eof = 0
       self.available_streams.clear()
       if self.client:
         del self.client
@@ -141,6 +146,23 @@ class CameraView(Widget):
   @property
   def stream_type(self) -> VisionStreamType:
     return self._stream_type
+
+  @property
+  def display_frame_id(self) -> int:
+    return self._display_frame_id
+
+  @property
+  def display_timestamp_eof(self) -> int:
+    return self._display_timestamp_eof
+
+  def normalized_bbox_to_screen(self, rect: rl.Rectangle, bbox: tuple[float, float, float, float]) -> rl.Rectangle | None:
+    if self.frame is None or len(bbox) != 4:
+      return None
+    transform = self._calc_frame_matrix(rect)
+    mapped = map_normalized_bbox(bbox, (rect.x, rect.y, rect.width, rect.height),
+                                 (float(transform[0, 0]), float(transform[1, 1])),
+                                 (float(transform[0, 2]), float(transform[1, 2])))
+    return rl.Rectangle(*mapped) if mapped is not None else None
 
   def close(self) -> None:
     self._clear_textures()
@@ -192,6 +214,8 @@ class CameraView(Widget):
     if buffer:
       self._texture_needs_update = True
       self.frame = buffer
+      self._display_frame_id = int(self.client.frame_id)
+      self._display_timestamp_eof = int(self.client.timestamp_eof)
     elif not self.client.is_connected():
       # ensure we clear the displayed frame when the connection is lost
       self.frame = None
@@ -313,6 +337,8 @@ class CameraView(Widget):
     target_frame = self._target_client.recv(timeout_ms=0)
     if target_frame:
       self.frame = target_frame  # Update current frame to target frame
+      self._display_frame_id = int(self._target_client.frame_id)
+      self._display_timestamp_eof = int(self._target_client.timestamp_eof)
       self._complete_switch()
 
   def _complete_switch(self) -> None:
