@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "model": {
+    "name": "YOLOX-Nano",
+    "upstreamRepository": "https://github.com/Megvii-BaseDetection/YOLOX",
+    "upstreamTag": "0.1.1rc0",
+    "upstreamCommit": "e1052df71842031413f6030723c3607b839c80ce",
+    "weightUrl": "https://github.com/Megvii-BaseDetection/YOLOX/releases/download/0.1.1rc0/yolox_nano.onnx",
+    "onnxSha256": "c789161ed43c8269fcd4e67c67eeeb4e80c622da2eb296a20bc6007bd18a0b7d",
+    "license": "Apache-2.0",
+    "licenseEvidence": "openpilot/selfdrive/objectd/models/MODEL_LICENSES.md"
+  },
+  "input": {
+    "name": "images",
+    "shape": [1, 3, 416, 416],
+    "dtype": "float32",
+    "sourceColorOrder": "RGB",
+    "modelColorOrder": "BGR",
+    "normalization": "none; values remain in [0,255]",
+    "resize": "aspect-preserving nearest-neighbor",
+    "letterboxValue": 114,
+    "layout": "NCHW"
+  },
+  "output": {
+    "name": "output",
+    "shape": [1, 3549, 85],
+    "layout": "decoded [centerX,centerY,width,height,objectness,80 COCO class scores]"
+  },
+  "classes": [
+    {"classId": 0, "name": "person", "cocoIndex": 0},
+    {"classId": 1, "name": "bicycle", "cocoIndex": 1},
+    {"classId": 2, "name": "car", "cocoIndex": 2},
+    {"classId": 3, "name": "motorcycle", "cocoIndex": 3},
+    {"classId": 4, "name": "bus", "cocoIndex": 5},
+    {"classId": 5, "name": "truck", "cocoIndex": 7}
+  ],
+  "postprocess": {
+    "confidence": 0.35,
+    "nmsIou": 0.45,
+    "maxObjects": 32,
+    "bboxOrder": ["left", "top", "right", "bottom"]
+  },
+  "compile": {
+    "entrypoint": "openpilot/selfdrive/objectd/compile_object_model.py",
+    "larch64Flags": "DEV=QCOM IMAGE=1 FLOAT16=1 NOLOCALS=1 JIT_BATCH_SIZE=0 OPENPILOT_HACKS=1",
+    "artifact": "object_detector_tinygrad.pkl chunks",
+    "qcomValidation": "not performed"
+  }
+}

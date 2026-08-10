@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "datasetVersion": "replace-with-frozen-version",
+  "createdAt": "YYYY-MM-DDTHH:MM:SSZ",
+  "samples": [
+    {
+      "sampleId": "stable-session-frame-id",
+      "sha256": "64-lowercase-hex-characters",
+      "split": "tuning-or-holdout",
+      "sessionId": "route-or-session-id",
+      "sourceStream": "road",
+      "sourceWidth": 1928,
+      "sourceHeight": 1208,
+      "frameId": 0,
+      "annotations": [
+        {
+          "class": "car",
+          "bboxNormalized": [0.0, 0.0, 1.0, 1.0],
+          "contactPointVisible": false,
+          "distanceUnknown": true,
+          "distanceMeters": null
+        }
+      ],
+      "labels": {
+        "lighting": "day-frontlit",
+        "weather": "clear",
+        "slopeLongitudinalPercent": null,
+        "slopeLateralPercent": null,
+        "vehicleSpeedMps": null,
+        "accelerationMps2": null,
+        "brakePressed": null,
+        "gasPressed": null,
+        "occlusion": "unknown"
+      }
+    }
+  ]
+}

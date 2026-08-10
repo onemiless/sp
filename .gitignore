@@ -47,6 +47,7 @@ bin/
 *_pyx.cpp
 *.stats
 *.pkl
+openpilot/selfdrive/objectd/models/object_detector.onnx
 *.pkl*
 config.json
 compile_commands.json
