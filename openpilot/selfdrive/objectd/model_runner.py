@@ -33,9 +33,8 @@ def model_hash() -> str:
 
 class ObjectModelRunner:
   def __init__(self):
-    from tinygrad import Device, Tensor
+    from tinygrad import Tensor
 
-    self._device = Device.DEFAULT
     self._tensor = Tensor
     with open_file_chunked(str(MODEL_PKL_PATH)) as stream:
       self._run = pickle.load(stream)
@@ -45,7 +44,8 @@ class ObjectModelRunner:
     expected = tuple(self._manifest["input"]["shape"])
     if input_tensor.shape != expected or input_tensor.dtype != np.float32:
       raise ValueError(f"expected float32 input {expected}, got {input_tensor.dtype} {input_tensor.shape}")
-    tensor = self._tensor(input_tensor, device=self._device).realize()
+    # compile3 captures the host input as NPY and copies it into the QCOM graph.
+    tensor = self._tensor(input_tensor, device="NPY").realize()
     output = self._run(images=tensor)
     result = output.numpy()
     expected_output = tuple(self._manifest["output"]["shape"])

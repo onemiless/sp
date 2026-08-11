@@ -29,6 +29,10 @@ class TestScopeContract(unittest.TestCase):
     camera_view = (REPO / "openpilot/selfdrive/ui/onroad/cameraview.py").read_text(encoding="utf-8")
     self.assertTrue(camera_view.startswith("from __future__ import annotations\n"))
 
+  def test_model_runner_matches_compiled_host_input_device(self):
+    model_runner = (REPO / "openpilot/selfdrive/objectd/model_runner.py").read_text(encoding="utf-8")
+    self.assertIn('self._tensor(input_tensor, device="NPY")', model_runner)
+
   def test_feature_does_not_import_control_chain_modules(self):
     sources = list((REPO / "openpilot/selfdrive/objectd").glob("*.py"))
     sources += [REPO / "openpilot/selfdrive/ui/onroad/vision_object_renderer.py",
