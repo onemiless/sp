@@ -7,9 +7,10 @@ from pathlib import Path
 import tempfile
 import urllib.request
 
+from openpilot.selfdrive.objectd.model_paths import SOURCE_MODELS_DIR, object_model_root
 
-MODELS_DIR = Path(__file__).resolve().parent / "models"
-MANIFEST_PATH = MODELS_DIR / "object_detector_manifest.json"
+
+MANIFEST_PATH = SOURCE_MODELS_DIR / "object_detector_manifest.json"
 
 
 def sha256_file(path: Path) -> str:
@@ -47,7 +48,7 @@ def fetch_model(output: Path, manifest_path: Path = MANIFEST_PATH) -> Path:
 
 def main() -> None:
   parser = argparse.ArgumentParser()
-  parser.add_argument("--output", type=Path, default=MODELS_DIR / "object_detector.onnx")
+  parser.add_argument("--output", type=Path, default=object_model_root() / "object_detector.onnx")
   parser.add_argument("--manifest", type=Path, default=MANIFEST_PATH)
   args = parser.parse_args()
   print(fetch_model(args.output, args.manifest))

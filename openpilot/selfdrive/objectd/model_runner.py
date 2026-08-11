@@ -5,13 +5,13 @@ from pathlib import Path
 import numpy as np
 
 from openpilot.common.file_chunker import get_existing_chunks, open_file_chunked
+from openpilot.selfdrive.objectd.model_paths import SOURCE_MODELS_DIR, object_model_root
 
 
-OBJECTD_DIR = Path(__file__).resolve().parent
-MODELS_DIR = OBJECTD_DIR / "models"
-MANIFEST_PATH = MODELS_DIR / "object_detector_manifest.json"
-MODEL_PKL_PATH = MODELS_DIR / "object_detector_tinygrad.pkl"
-MODEL_COMPILE_STAMP_PATH = MODELS_DIR / "object_detector_tinygrad.sha256"
+MANIFEST_PATH = SOURCE_MODELS_DIR / "object_detector_manifest.json"
+MODEL_ARTIFACT_DIR = object_model_root()
+MODEL_PKL_PATH = MODEL_ARTIFACT_DIR / "object_detector_tinygrad.pkl"
+MODEL_COMPILE_STAMP_PATH = MODEL_ARTIFACT_DIR / "object_detector_tinygrad.sha256"
 
 
 def model_artifact_available(model_path: Path = MODEL_PKL_PATH, manifest_path: Path = MANIFEST_PATH,

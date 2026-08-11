@@ -8,6 +8,7 @@ import numpy as np
 from openpilot.selfdrive.objectd.constants import DetectorThresholds
 from openpilot.selfdrive.objectd.geometry import (DistanceGateInput, DistanceInvalidReason, estimate_camera_ground_distance,
                                                  gate_metric_distance, intersect_local_ground)
+from openpilot.selfdrive.objectd.model_paths import object_model_root
 from openpilot.selfdrive.objectd.model_runner import model_artifact_available
 from openpilot.selfdrive.objectd.postprocess import Detection, decode_yolox, decode_yolox_grid
 from openpilot.selfdrive.objectd.preprocess import invert_letterbox_xyxy, letterbox_nv12, letterbox_rgb
@@ -192,6 +193,15 @@ class TestResourceGovernor(unittest.TestCase):
 
 
 class TestModelArtifact(unittest.TestCase):
+  def test_device_artifacts_live_outside_updater_cleaned_checkout(self):
+    source_models = Path(__file__).resolve().parents[1] / "models"
+    device_root = object_model_root(device=True, environ={})
+    self.assertEqual(device_root, Path("/data/models/objectd"))
+    self.assertFalse(device_root.is_relative_to(source_models))
+
+  def test_model_root_override_is_shared_by_build_and_runtime(self):
+    self.assertEqual(object_model_root(device=True, environ={"OBJECTD_MODEL_ROOT": "/tmp/objectd"}), Path("/tmp/objectd"))
+
   def test_requires_complete_model_artifact(self):
     with tempfile.TemporaryDirectory() as directory:
       model_path = Path(directory) / "object_detector_tinygrad.pkl"

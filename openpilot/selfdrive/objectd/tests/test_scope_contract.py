@@ -37,6 +37,12 @@ class TestScopeContract(unittest.TestCase):
     model_runner = (REPO / "openpilot/selfdrive/objectd/model_runner.py").read_text(encoding="utf-8")
     self.assertIn('self._tensor(input_tensor, device="NPY")', model_runner)
 
+  def test_device_build_and_runtime_share_persistent_model_root(self):
+    scons = (REPO / "openpilot/selfdrive/objectd/SConscript").read_text(encoding="utf-8")
+    model_runner = (REPO / "openpilot/selfdrive/objectd/model_runner.py").read_text(encoding="utf-8")
+    self.assertIn("object_model_root(device=arch == 'larch64')", scons)
+    self.assertIn("MODEL_ARTIFACT_DIR = object_model_root()", model_runner)
+
   def test_feature_does_not_import_control_chain_modules(self):
     sources = list((REPO / "openpilot/selfdrive/objectd").glob("*.py"))
     sources += [REPO / "openpilot/selfdrive/ui/onroad/vision_object_renderer.py",
