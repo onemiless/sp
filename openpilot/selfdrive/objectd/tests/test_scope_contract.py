@@ -29,6 +29,10 @@ class TestScopeContract(unittest.TestCase):
     camera_view = (REPO / "openpilot/selfdrive/ui/onroad/cameraview.py").read_text(encoding="utf-8")
     self.assertTrue(camera_view.startswith("from __future__ import annotations\n"))
 
+  def test_coarse_distance_is_visibly_approximate(self):
+    renderer = (REPO / "openpilot/selfdrive/ui/onroad/vision_object_renderer.py").read_text(encoding="utf-8")
+    self.assertIn('label += f" ~{float(obj.distance):.1f}m"', renderer)
+
   def test_model_runner_matches_compiled_host_input_device(self):
     model_runner = (REPO / "openpilot/selfdrive/objectd/model_runner.py").read_text(encoding="utf-8")
     self.assertIn('self._tensor(input_tensor, device="NPY")', model_runner)

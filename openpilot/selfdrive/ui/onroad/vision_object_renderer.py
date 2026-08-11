@@ -72,7 +72,7 @@ class VisionObjectRenderer:
       class_name = CLASS_NAMES[class_id] if 0 <= class_id < len(CLASS_NAMES) else f"class-{class_id}"
       label = f"{class_name} {float(obj.confidence):.2f}"
       if ui_state.vision_object_distance_display and obj.distanceValid:
-        label += f" {float(obj.distance):.1f}m"
+        label += f" ~{float(obj.distance):.1f}m"
       if debug:
         label += f" #{int(obj.trackId)} {age_ms:.0f}ms"
       rl.draw_text_ex(self.font, label, rl.Vector2(screen.x, max(rect.y, screen.y - 32)), 28, 0, TEXT_COLOR)

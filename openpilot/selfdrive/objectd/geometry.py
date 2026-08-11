@@ -38,6 +38,14 @@ class DistanceResult:
   reason: DistanceInvalidReason = DistanceInvalidReason.NONE
 
 
+@dataclass(frozen=True)
+class CoarseDistanceResult:
+  valid: bool
+  position: tuple[float, float, float] = (0.0, 0.0, 0.0)
+  distance_m: float = 0.0
+  distance_std_m: float = 0.0
+
+
 def gate_metric_distance(value: DistanceGateInput) -> DistanceResult:
   if value.result_age_ms > 300.0:
     return DistanceResult(False, reason=DistanceInvalidReason.STALE)
@@ -75,3 +83,68 @@ def intersect_local_ground(ray_origin_camera_road: np.ndarray, ray_direction_cam
   point_vehicle_road = point_camera_road - translation
   point_vehicle_road[2] = 0.0
   return point_vehicle_road
+
+
+def _camera_ground_point(contact: tuple[float, float], image_size: tuple[int, int], intrinsics: np.ndarray,
+                         rpy_calib: tuple[float, float, float], camera_height_m: float) -> np.ndarray | None:
+  from openpilot.common.transformations.camera import get_view_frame_from_road_frame
+
+  width, height = image_size
+  calibration = np.asarray(rpy_calib, dtype=np.float64)
+  camera_matrix = np.asarray(intrinsics, dtype=np.float64)
+  if width <= 0 or height <= 0 or calibration.shape != (3,) or camera_matrix.shape != (3, 3):
+    return None
+  if not np.all(np.isfinite([*contact, *calibration, camera_height_m, *camera_matrix.flat])):
+    return None
+  if not (0.0 < contact[0] < 1.0 and 0.0 < contact[1] < 1.0 and 0.5 <= camera_height_m <= 2.5):
+    return None
+
+  pixel = np.array([contact[0] * width, contact[1] * height, 1.0], dtype=np.float64)
+  try:
+    ray_view = np.linalg.solve(camera_matrix, pixel)
+  except np.linalg.LinAlgError:
+    return None
+  view_from_road = get_view_frame_from_road_frame(*calibration, camera_height_m)
+  rotation = view_from_road[:, :3]
+  translation = view_from_road[:, 3]
+  ray_origin_road = -rotation.T @ translation
+  ray_direction_road = rotation.T @ ray_view
+  point = intersect_local_ground(ray_origin_road, ray_direction_road, np.zeros(3))
+  if point is None or point[0] <= 0.0:
+    return None
+  return point
+
+
+def estimate_camera_ground_distance(contact: tuple[float, float], image_size: tuple[int, int], intrinsics: np.ndarray,
+                                    rpy_calib: tuple[float, float, float], rpy_spread: tuple[float, float, float],
+                                    camera_height_m: float, contact_std_normalized: float) -> CoarseDistanceResult:
+  """Estimate display-only range from SP calibration, relative to the camera ground point."""
+  spread = np.asarray(rpy_spread, dtype=np.float64)
+  if spread.shape != (3,) or not np.all(np.isfinite(spread)) or np.any(spread < 0.0):
+    return CoarseDistanceResult(False)
+  if not math.isfinite(contact_std_normalized) or contact_std_normalized <= 0.0:
+    return CoarseDistanceResult(False)
+
+  point = _camera_ground_point(contact, image_size, intrinsics, rpy_calib, camera_height_m)
+  if point is None:
+    return CoarseDistanceResult(False)
+  distance = float(np.hypot(point[0], point[1]))
+  if distance < 5.0 - 1e-6 or distance > 30.0 + 1e-6:
+    return CoarseDistanceResult(False)
+  distance = min(30.0, max(5.0, distance))
+
+  variants = []
+  for sign in (-1.0, 1.0):
+    varied_contact = (contact[0], contact[1] + sign * contact_std_normalized)
+    variants.append(_camera_ground_point(varied_contact, image_size, intrinsics, rpy_calib, camera_height_m))
+    for axis in range(3):
+      varied_rpy = np.asarray(rpy_calib, dtype=np.float64).copy()
+      varied_rpy[axis] += sign * spread[axis]
+      variants.append(_camera_ground_point(contact, image_size, intrinsics, tuple(varied_rpy), camera_height_m))
+  if any(value is None for value in variants):
+    return CoarseDistanceResult(False)
+  variant_distances = [float(np.hypot(value[0], value[1])) for value in variants if value is not None]
+  distance_std = max(0.5, max(abs(value - distance) for value in variant_distances))
+  if not math.isfinite(distance_std) or distance_std > 3.0:
+    return CoarseDistanceResult(False)
+  return CoarseDistanceResult(True, tuple(float(value) for value in point), distance, distance_std)

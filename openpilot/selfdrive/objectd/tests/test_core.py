@@ -6,7 +6,8 @@ from pathlib import Path
 import numpy as np
 
 from openpilot.selfdrive.objectd.constants import DetectorThresholds
-from openpilot.selfdrive.objectd.geometry import DistanceGateInput, DistanceInvalidReason, gate_metric_distance, intersect_local_ground
+from openpilot.selfdrive.objectd.geometry import (DistanceGateInput, DistanceInvalidReason, estimate_camera_ground_distance,
+                                                 gate_metric_distance, intersect_local_ground)
 from openpilot.selfdrive.objectd.model_runner import model_artifact_available
 from openpilot.selfdrive.objectd.postprocess import Detection, decode_yolox, decode_yolox_grid
 from openpilot.selfdrive.objectd.preprocess import invert_letterbox_xyxy, letterbox_nv12, letterbox_rgb
@@ -95,6 +96,40 @@ class TestTracker(unittest.TestCase):
 
 
 class TestDistanceGate(unittest.TestCase):
+  def test_sp_calibration_camera_ground_projection(self):
+    from openpilot.common.transformations.camera import get_view_frame_from_road_frame
+
+    width, height = 1928, 1208
+    intrinsics = np.array([[2648.0, 0.0, width / 2], [0.0, 2648.0, height / 2], [0.0, 0.0, 1.0]])
+    view_from_road = get_view_frame_from_road_frame(0.0, 0.0, 0.0, 1.28)
+    expected = np.array([10.0, 2.0, 0.0, 1.0])
+    projected = intrinsics @ (view_from_road @ expected)
+    contact = (projected[0] / projected[2] / width, projected[1] / projected[2] / height)
+
+    result = estimate_camera_ground_distance(contact, (width, height), intrinsics, (0.0, 0.0, 0.0),
+                                             (0.0, 0.0, 0.0), 1.28, 1.0 / height)
+    self.assertTrue(result.valid)
+    np.testing.assert_allclose(result.position, expected[:3], atol=1e-6)
+    self.assertAlmostEqual(result.distance_m, np.hypot(10.0, 2.0), places=5)
+
+    far = np.array([30.0, 0.0, 0.0, 1.0])
+    projected_far = intrinsics @ (view_from_road @ far)
+    far_contact = (projected_far[0] / projected_far[2] / width, projected_far[1] / projected_far[2] / height)
+    far_result = estimate_camera_ground_distance(far_contact, (width, height), intrinsics, (0.0, 0.0, 0.0),
+                                                (0.0, 0.0, 0.0), 1.28, 1.0 / height)
+    self.assertTrue(far_result.valid)
+    self.assertEqual(far_result.distance_m, 30.0)
+
+  def test_coarse_distance_rejects_horizon_and_large_uncertainty(self):
+    intrinsics = np.array([[1000.0, 0.0, 500.0], [0.0, 1000.0, 300.0], [0.0, 0.0, 1.0]])
+    horizon = estimate_camera_ground_distance((0.5, 0.5), (1000, 600), intrinsics,
+                                              (0.0, 0.0, 0.0), (0.0, 0.0, 0.0), 1.2, 0.001)
+    self.assertFalse(horizon.valid)
+
+    uncertain = estimate_camera_ground_distance((0.5, 0.54), (1000, 600), intrinsics,
+                                                (0.0, 0.0, 0.0), (0.0, 0.1, 0.0), 1.2, 0.02)
+    self.assertFalse(uncertain.valid)
+
   def test_missing_extrinsics_fails_closed(self):
     result = gate_metric_distance(DistanceGateInput(result_age_ms=0.0))
     self.assertFalse(result.valid)

@@ -29,6 +29,11 @@ class TestSchemaContract(unittest.TestCase):
     self.assertRegex(custom, r"struct NormalizedBoundingBoxVelocity \{\s*leftPerSecond @0 :Float32;\s*topPerSecond @1 :Float32;")
     self.assertRegex(custom, r"struct PositionStdDev \{\s*x @0 :Float32;\s*y @1 :Float32;\s*z @2 :Float32;")
 
+  def test_coarse_distance_has_an_unambiguous_camera_origin(self):
+    custom = (ROOT / "openpilot/cereal/custom.capnp").read_text(encoding="utf-8")
+    self.assertRegex(custom, r"enum PositionOrigin \{\s*frontBumperGroundCenter @0;\s*cameraGroundCenter @1;")
+
+
 
 if __name__ == "__main__":
   unittest.main()

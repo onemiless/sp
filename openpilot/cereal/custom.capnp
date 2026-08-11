@@ -510,6 +510,7 @@ struct VisionObjectStateSP @0xcb9fd56c7057593a {
 
   enum PositionOrigin {
     frontBumperGroundCenter @0;
+    cameraGroundCenter @1;
   }
 
   enum DistanceMode {

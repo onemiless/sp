@@ -17,3 +17,10 @@ The manager starts `objectd` only when all of the following are true at the offr
 All feature Params default to false. Validation metadata recording is development-only and starts with the detector when `VisionObjectRecordValidation` is true. Its bounded sidecar files are written beside the normal route-log directory under `vision_object_validation` and never contain camera frames.
 
 This feature is display-only. It must not be connected to controls, planners, CAN, radar, or Panda.
+
+When distance display is enabled, objectd uses the live SP road-camera calibration (camera attitude, calibrated height,
+camera intrinsics) to intersect an unclipped detection-box ground contact with a locally flat road. Results are relative
+to the camera ground point, are limited to 5-30 m with at most 3 m estimated uncertainty, and are rendered with a `~`
+prefix in `coarse` mode. They are not front-bumper distances and are invalid whenever calibration or contact geometry is
+unavailable. This geometric estimate has no authority outside the display path and still requires measured-distance road
+validation.

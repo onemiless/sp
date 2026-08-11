@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 PUBLISH_HZ = 5.0
 NORMAL_INFERENCE_HZ = 5.0
 DEGRADED_INFERENCE_HZ = 2.0

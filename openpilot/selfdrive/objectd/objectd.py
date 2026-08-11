@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 from collections import deque
+from dataclasses import dataclass
 import multiprocessing
 import queue
 import time
@@ -9,8 +10,10 @@ import numpy as np
 from openpilot.cereal import log, messaging
 from openpilot.common.realtime import Ratekeeper
 from openpilot.common.swaglog import cloudlog
+from openpilot.common.transformations.camera import DEVICE_CAMERAS
 from openpilot.selfdrive.objectd.constants import (DEGRADED_INFERENCE_HZ, MAX_RESULT_AGE_MS,
                                                    NORMAL_INFERENCE_HZ, PUBLISH_HZ, SCHEMA_VERSION)
+from openpilot.selfdrive.objectd.geometry import estimate_camera_ground_distance
 from openpilot.selfdrive.objectd.model_runner import model_hash
 from openpilot.selfdrive.objectd.resource import ResourceGovernor, ResourceMode, ResourceSample
 from openpilot.selfdrive.objectd.supervisor import RetryController, model_service_available, worker_timed_out
@@ -19,6 +22,14 @@ from openpilot.selfdrive.objectd.worker import worker_main
 
 WORKER_DEADLINE_S = 2.0
 WORKER_STARTUP_DEADLINE_S = 30.0
+
+
+@dataclass(frozen=True)
+class CoarseCalibrationContext:
+  intrinsics: np.ndarray
+  rpy_calib: tuple[float, float, float]
+  rpy_spread: tuple[float, float, float]
+  camera_height_m: float
 
 
 class WorkerController:
@@ -84,9 +95,47 @@ def _percentile(values: deque[float], percentile: float) -> float:
   return float(np.percentile(values, percentile)) if values else 0.0
 
 
-def _empty_object_payload(track: dict) -> dict:
+def _coarse_calibration_context(sm, source_width: int, source_height: int) -> CoarseCalibrationContext | None:
+  required = ("deviceState", "liveCalibration", "roadCameraState")
+  if any(not sm.seen[name] or not sm.valid[name] or not sm.alive[name] for name in required):
+    return None
+  calibration = sm["liveCalibration"]
+  if str(calibration.calStatus) != "calibrated":
+    return None
+  try:
+    rpy_calib = tuple(float(value) for value in calibration.rpyCalib)
+    rpy_spread = tuple(float(value) for value in calibration.rpyCalibSpread)
+    camera_height = tuple(float(value) for value in calibration.height)
+    camera_config = DEVICE_CAMERAS[(str(sm["deviceState"].deviceType), str(sm["roadCameraState"].sensor))].fcam
+  except (KeyError, TypeError, ValueError):
+    return None
+  if len(rpy_calib) != 3 or len(rpy_spread) != 3 or len(camera_height) != 1:
+    return None
+  if camera_config.size != (source_width, source_height):
+    return None
+  values = (*rpy_calib, *rpy_spread, camera_height[0], *camera_config.intrinsics.flat)
+  if not np.all(np.isfinite(values)):
+    return None
+  return CoarseCalibrationContext(camera_config.intrinsics, rpy_calib, rpy_spread, camera_height[0])
+
+
+def _object_payload(track: dict, source_size: tuple[int, int],
+                    calibration: CoarseCalibrationContext | None) -> dict:
   bbox = [float(v) for v in track["bbox"]]
   velocity = [float(v) for v in track["velocity"]]
+  contact = ((bbox[0] + bbox[2]) / 2.0, bbox[3])
+  contact_valid = bool(not track["bbox_clipped"] and 0.0 < contact[0] < 1.0 and 0.0 < contact[1] < 1.0)
+  estimate = None
+  if calibration is not None and contact_valid:
+    contact_std = max(2.0 / source_size[1], 0.05 * (bbox[3] - bbox[1]))
+    estimate = estimate_camera_ground_distance(contact, source_size, calibration.intrinsics,
+                                               calibration.rpy_calib, calibration.rpy_spread,
+                                               calibration.camera_height_m, contact_std)
+  distance_valid = bool(estimate is not None and estimate.valid)
+  position = estimate.position if distance_valid else (0.0, 0.0, 0.0)
+  distance = estimate.distance_m if distance_valid else 0.0
+  distance_std = estimate.distance_std_m if distance_valid else 0.0
+  range_band = "unknown" if not distance_valid else ("near" if distance < 10.0 else "medium" if distance < 20.0 else "far")
   return {
     "trackId": int(track["track_id"]),
     "classId": int(track["class_id"]),
@@ -98,13 +147,13 @@ def _empty_object_payload(track: dict) -> dict:
     },
     "bboxPredictionValid": bool(track["prediction_valid"]),
     "bboxClipped": bool(track["bbox_clipped"]),
-    "contactU": (bbox[0] + bbox[2]) / 2.0,
-    "contactV": bbox[3],
-    "contactPointValid": False,
-    "x": 0.0, "y": 0.0, "z": 0.0,
-    "positionStd": {"x": 0.0, "y": 0.0, "z": 0.0},
-    "distance": 0.0, "distanceStd": 0.0, "distanceValid": False,
-    "rangeBand": "unknown",
+    "contactU": contact[0],
+    "contactV": contact[1],
+    "contactPointValid": contact_valid,
+    "x": position[0], "y": position[1], "z": position[2],
+    "positionStd": {"x": distance_std, "y": distance_std, "z": 0.0},
+    "distance": distance, "distanceStd": distance_std, "distanceValid": distance_valid,
+    "rangeBand": range_band,
     "relativeSpeed": 0.0, "relativeSpeedValid": False,
     "ttc": 0.0, "ttcValid": False,
     "corridorState": "unknown",
@@ -114,7 +163,7 @@ def _empty_object_payload(track: dict) -> dict:
 def main() -> None:
   cloudlog.warning("objectd supervisor init: ROAD-only, display-only")
   pm = messaging.PubMaster(["visionObjectStateSP"])
-  sm = messaging.SubMaster(["deviceState", "modelV2"])
+  sm = messaging.SubMaster(["deviceState", "liveCalibration", "modelV2", "roadCameraState"])
   rk = Ratekeeper(PUBLISH_HZ, print_delay_threshold=None)
   worker = WorkerController()
   retry = RetryController()
@@ -187,7 +236,11 @@ def main() -> None:
       if last_result and result_age_ms > MAX_RESULT_AGE_MS:
         error_code = "stale"
       debug_degraded_objects = bool(last_result and mode == ResourceMode.DEGRADED and result_age_ms <= MAX_RESULT_AGE_MS)
-      objects = [_empty_object_payload(obj) for obj in last_result["objects"]] if (result_valid or debug_degraded_objects) else []
+      source_size = ((int(last_result["source_width"]), int(last_result["source_height"])) if last_result else (0, 0))
+      calibration = _coarse_calibration_context(sm, *source_size) if result_valid else None
+      objects = ([_object_payload(obj, source_size, calibration) for obj in last_result["objects"]]
+                 if (result_valid or debug_degraded_objects) else [])
+      coarse_distance_available = bool(calibration is not None and any(obj["distanceValid"] for obj in objects))
 
       msg = messaging.new_message("visionObjectStateSP", valid=True)
       state = msg.visionObjectStateSP
@@ -204,10 +257,10 @@ def main() -> None:
       state.resultAgeMs = float(result_age_ms) if np.isfinite(result_age_ms) else 0.0
       state.resultValid = result_valid
       state.modelHash = model_hash()
-      state.positionOrigin = "frontBumperGroundCenter"
+      state.positionOrigin = "cameraGroundCenter"
       state.vehicleExtrinsicsValid = False
       state.roadPlaneValid = False
-      state.distanceMode = "invalid"
+      state.distanceMode = "coarse" if coarse_distance_available else "invalid"
       state.objects = objects
       state.droppedObjectCount = int(last_result["dropped"]) if last_result else 0
       state.errorCode = error_code
