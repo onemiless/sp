@@ -40,6 +40,10 @@ class TestVisionObjectSessionLatch(unittest.TestCase):
     self.assertFalse(latch(True, params, FakeCP("")))
     self.assertTrue(latch(True, params, FakeCP("tesla")))
 
+  def test_falls_back_to_persistent_car_brand(self):
+    latch = VisionObjectSessionLatch(persistent_brand_getter=lambda params: "tesla")
+    self.assertTrue(latch(True, FakeParams(True), FakeCP("")))
+
   def test_disabled_at_rising_edge_cannot_enable_onroad(self):
     latch = VisionObjectSessionLatch()
     params = FakeParams(False)

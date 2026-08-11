@@ -4,8 +4,10 @@ from collections.abc import Callable
 class VisionObjectSessionLatch:
   """Latch the ROAD detector decision once at the offroad-to-onroad edge."""
 
-  def __init__(self, artifact_available_getter: Callable[[], bool] = lambda: True):
+  def __init__(self, artifact_available_getter: Callable[[], bool] = lambda: True,
+               persistent_brand_getter: Callable[[object], str] = lambda params: ""):
     self._artifact_available_getter = artifact_available_getter
+    self._persistent_brand_getter = persistent_brand_getter
     self._started = False
     self._session_eligible = False
     self._latched = False
@@ -22,7 +24,8 @@ class VisionObjectSessionLatch:
         params is not None and params.get_bool("VisionObjectDetectionEnabled") and
         self._artifact_available_getter()
       )
-    if self._session_eligible and getattr(CP, "brand", "") == "tesla":
+    brand = getattr(CP, "brand", "") or self._persistent_brand_getter(params)
+    if self._session_eligible and brand == "tesla":
       self._latched = True
     self._started = True
     return self._latched

@@ -3,7 +3,7 @@ import operator
 import platform
 
 from opendbc.car.structs import car
-from openpilot.cereal import custom
+from openpilot.cereal import custom, messaging
 from openpilot.common.params import Params
 from openpilot.common.hardware import PC, TICI
 from openpilot.system.manager.process import PythonProcess, NativeProcess, DaemonProcess
@@ -115,7 +115,14 @@ def and_(*fns):
 def not_(*fns):
   return lambda *args: operator.not_(*(fn(*args) for fn in fns))
 
-vision_object_session_latch = VisionObjectSessionLatch(model_artifact_available)
+def persistent_car_brand(params: Params) -> str:
+  try:
+    raw = params.get("CarParamsPersistent")
+    return messaging.log_from_bytes(raw, car.CarParams).brand if raw is not None else ""
+  except Exception:
+    return ""
+
+vision_object_session_latch = VisionObjectSessionLatch(model_artifact_available, persistent_car_brand)
 
 def vision_object_recording(started: bool, params: Params, CP: car.CarParams) -> bool:
   return vision_object_session_latch(started, params, CP) and params.get_bool("VisionObjectRecordValidation")
