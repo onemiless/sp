@@ -16,20 +16,28 @@ def sha256_file(path: Path) -> str:
   return digest.hexdigest()
 
 
-def validate_graph(onnx_path: Path, manifest: dict) -> None:
-  from tinygrad.nn.onnx import OnnxRunner
+def graph_specs(graph: dict) -> tuple[dict, dict]:
+  initializer_names = {initializer["name"] for initializer in graph["initializer"]}
+  inputs = {value["name"]: value["parsed_type"] for value in graph["input"] if value["name"] not in initializer_names}
+  outputs = {value["name"]: value["parsed_type"] for value in graph["output"]}
+  return inputs, outputs
 
-  runner = OnnxRunner(str(onnx_path))
+
+def validate_graph(onnx_path: Path, manifest: dict) -> None:
+  from tinygrad.nn.onnx import OnnxPBParser
+
+  graph = OnnxPBParser(str(onnx_path), load_external_data=True).parse()["graph"]
+  graph_inputs, graph_outputs = graph_specs(graph)
   expected_input = manifest["input"]
-  if set(runner.graph_inputs) != {expected_input["name"]}:
-    raise RuntimeError(f"unexpected ONNX inputs: {tuple(runner.graph_inputs)}")
-  input_spec = runner.graph_inputs[expected_input["name"]]
+  if set(graph_inputs) != {expected_input["name"]}:
+    raise RuntimeError(f"unexpected ONNX inputs: {tuple(graph_inputs)}")
+  input_spec = graph_inputs[expected_input["name"]]
   if tuple(input_spec.shape) != tuple(expected_input["shape"]):
     raise RuntimeError(f"input shape mismatch: {input_spec.shape}")
   expected_output = manifest["output"]
-  if tuple(runner.graph_outputs) != (expected_output["name"],):
-    raise RuntimeError(f"expected exactly one output, got {runner.graph_outputs}")
-  output_spec = runner.graph_outputs[expected_output["name"]]
+  if tuple(graph_outputs) != (expected_output["name"],):
+    raise RuntimeError(f"expected exactly one output, got {tuple(graph_outputs)}")
+  output_spec = graph_outputs[expected_output["name"]]
   if tuple(output_spec.shape) != tuple(expected_output["shape"]):
     raise RuntimeError(f"output shape mismatch: {output_spec.shape}")
 
