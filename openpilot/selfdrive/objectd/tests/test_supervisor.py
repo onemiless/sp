@@ -1,6 +1,6 @@
 import unittest
 
-from openpilot.selfdrive.objectd.supervisor import RetryController, stream_connect_timed_out
+from openpilot.selfdrive.objectd.supervisor import RetryController, stream_connect_timed_out, worker_timed_out
 
 
 class TestRetryController(unittest.TestCase):
@@ -14,6 +14,12 @@ class TestRetryController(unittest.TestCase):
     retry.record_failure(40.0)
     self.assertTrue(retry.fused)
     self.assertFalse(retry.can_start(1000.0))
+
+  def test_worker_uses_longer_deadline_until_first_message(self):
+    self.assertFalse(worker_timed_out(0.0, False, 29.9, 2.0, 30.0))
+    self.assertTrue(worker_timed_out(0.0, False, 30.1, 2.0, 30.0))
+    self.assertFalse(worker_timed_out(10.0, True, 11.9, 2.0, 30.0))
+    self.assertTrue(worker_timed_out(10.0, True, 12.1, 2.0, 30.0))
 
   def test_failure_window_expires(self):
     retry = RetryController()

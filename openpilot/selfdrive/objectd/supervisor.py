@@ -6,6 +6,12 @@ FAILURE_WINDOW_S = 600.0
 FAILURE_FUSE_COUNT = 5
 
 
+def worker_timed_out(last_message_s: float, received_message: bool, now_s: float,
+                     runtime_deadline_s: float, startup_deadline_s: float) -> bool:
+  deadline_s = runtime_deadline_s if received_message else startup_deadline_s
+  return now_s - last_message_s > deadline_s
+
+
 def stream_connect_timed_out(started_s: float, now_s: float, timeout_s: float) -> bool:
   return timeout_s >= 0.0 and now_s - started_s >= timeout_s
 

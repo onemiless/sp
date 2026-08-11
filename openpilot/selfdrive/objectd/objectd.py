@@ -13,11 +13,12 @@ from openpilot.selfdrive.objectd.constants import (DEGRADED_INFERENCE_HZ, MAX_RE
                                                    NORMAL_INFERENCE_HZ, PUBLISH_HZ, SCHEMA_VERSION)
 from openpilot.selfdrive.objectd.model_runner import model_hash
 from openpilot.selfdrive.objectd.resource import ResourceGovernor, ResourceMode, ResourceSample
-from openpilot.selfdrive.objectd.supervisor import RetryController
+from openpilot.selfdrive.objectd.supervisor import RetryController, worker_timed_out
 from openpilot.selfdrive.objectd.worker import worker_main
 
 
 WORKER_DEADLINE_S = 2.0
+WORKER_STARTUP_DEADLINE_S = 30.0
 
 
 class WorkerController:
@@ -27,6 +28,7 @@ class WorkerController:
     self.control_queue = None
     self.process = None
     self.last_heartbeat_s = 0.0
+    self.received_message = False
 
   def start(self) -> None:
     if self.process is not None:
@@ -37,6 +39,7 @@ class WorkerController:
     self.process = self.context.Process(target=worker_main, args=(self.output_queue, self.control_queue), daemon=True)
     self.process.start()
     self.last_heartbeat_s = time.monotonic()
+    self.received_message = False
 
   def stop(self) -> None:
     if self.process is None:
@@ -68,6 +71,7 @@ class WorkerController:
         message = self.output_queue.get_nowait()
         messages.append(message)
         self.last_heartbeat_s = time.monotonic()
+        self.received_message = True
     except queue.Empty:
       return messages
 
@@ -154,8 +158,10 @@ def main() -> None:
       mode = governor.update(resource_sample, now_s)
 
       worker_failed = worker.process is not None and not worker.alive
-      worker_timed_out = worker.alive and now_s - worker.last_heartbeat_s > WORKER_DEADLINE_S
-      if worker_failed or worker_timed_out:
+      deadline_exceeded = worker.alive and worker_timed_out(
+        worker.last_heartbeat_s, worker.received_message, now_s, WORKER_DEADLINE_S, WORKER_STARTUP_DEADLINE_S,
+      )
+      if worker_failed or deadline_exceeded:
         worker.stop()
         retry.record_failure(now_s)
         last_result = None
