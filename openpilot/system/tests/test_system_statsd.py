@@ -83,8 +83,9 @@ def test_manager_switch_is_onroad_and_opt_in():
 
 
 def test_session_files_are_bounded_and_describe_gpu_limit(tmp_path, monkeypatch):
-  metadata = SimpleNamespace(channel="test", openpilot=SimpleNamespace(git_commit="abc", version="1"))
-  monkeypatch.setattr("openpilot.system.system_statsd.get_build_metadata", lambda: metadata)
+  monkeypatch.setattr("openpilot.system.system_statsd.get_branch", lambda: "test")
+  monkeypatch.setattr("openpilot.system.system_statsd.get_commit", lambda: "abc")
+  monkeypatch.setattr("openpilot.system.system_statsd.get_version", lambda: "1")
   monkeypatch.setattr("openpilot.system.system_statsd.HARDWARE.get_device_type", lambda: "test-device")
   collector = SystemStatsCollector()
   for _ in range(MAX_SESSIONS + 2):

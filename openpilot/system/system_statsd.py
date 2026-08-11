@@ -22,10 +22,11 @@ import uuid
 from typing import Any, NoReturn
 
 from openpilot.cereal import messaging
+from openpilot.common.git import get_branch, get_commit
 from openpilot.common.hardware import HARDWARE, PC
 from openpilot.common.swaglog import cloudlog
 from openpilot.common.utils import atomic_write
-from openpilot.common.version import get_build_metadata
+from openpilot.common.version import get_version
 
 
 SCHEMA_VERSION = 1
@@ -254,11 +255,12 @@ class SessionWriter:
     self.root.mkdir(parents=True, exist_ok=True)
     self.session_id = uuid.uuid4().hex[:12]
     self.started_at = datetime.now(UTC).isoformat()
-    metadata = get_build_metadata()
     self.metadata = {
-      "branch": metadata.channel,
-      "commit": metadata.openpilot.git_commit,
-      "version": metadata.openpilot.version,
+      # Avoid get_build_metadata(): its dirty check scans the complete device
+      # worktree, which is unnecessary overhead for this profiler.
+      "branch": get_branch(),
+      "commit": get_commit(),
+      "version": get_version(),
       "device_type": HARDWARE.get_device_type(),
     }
 
