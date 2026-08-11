@@ -237,6 +237,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"TeslaTurnSignalTestResult", {CLEAR_ON_MANAGER_START | CLEAR_ON_OFFROAD_TRANSITION, JSON}},
     {"TeslaTurnSignalTestStatus", {CLEAR_ON_MANAGER_START | CLEAR_ON_OFFROAD_TRANSITION, JSON}},
     {"TeslaTurnSignalValidation", {PERSISTENT | BACKUP, BOOL, "1"}},
+    {"SystemStatsCollectionEnabled", {PERSISTENT | BACKUP, BOOL, "0"}},
     {"VisionObjectDetectionEnabled", {PERSISTENT | BACKUP, BOOL, "0"}},
     {"VisionObjectOverlay", {PERSISTENT | BACKUP, BOOL, "0"}},
     {"VisionObjectDistanceDisplay", {PERSISTENT | BACKUP, BOOL, "0"}},
