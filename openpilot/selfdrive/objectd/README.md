@@ -18,6 +18,10 @@ All feature Params default to false. Validation metadata recording is developmen
 
 This feature is display-only. It must not be connected to controls, planners, CAN, radar, or Panda.
 
+Inference runs at 3 Hz in normal mode and 2 Hz under resource pressure. The supervisor pauses the worker if pressure
+persists. The result-age, camera-frame and tracker-prediction windows are sized for the 3 Hz normal cadence; degraded
+results remain hidden outside the development debug overlay.
+
 When distance display is enabled, objectd uses the live SP road-camera calibration (camera attitude, calibrated height,
 camera intrinsics) to intersect an unclipped detection-box ground contact with a locally flat road. Results are relative
 to the camera ground point, are limited to 5-30 m with at most 3 m estimated uncertainty, and are rendered with a `~`

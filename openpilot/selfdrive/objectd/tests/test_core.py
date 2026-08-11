@@ -11,7 +11,7 @@ from openpilot.selfdrive.objectd.geometry import (DistanceGateInput, DistanceInv
 from openpilot.selfdrive.objectd.model_runner import model_artifact_available
 from openpilot.selfdrive.objectd.postprocess import Detection, decode_yolox, decode_yolox_grid
 from openpilot.selfdrive.objectd.preprocess import invert_letterbox_xyxy, letterbox_nv12, letterbox_rgb
-from openpilot.selfdrive.objectd.resource import ResourceGovernor, ResourceMode, ResourceSample
+from openpilot.selfdrive.objectd.resource import ResourceGovernor, ResourceMode, ResourceSample, object_duration_sample
 from openpilot.selfdrive.objectd.road_plane import fit_road_plane
 from openpilot.selfdrive.objectd.tracker import ShortTermTracker
 
@@ -94,6 +94,12 @@ class TestTracker(unittest.TestCase):
     self.assertNotEqual(second.track_id, reset.track_id)
     self.assertFalse(reset.prediction_valid)
 
+  def test_tracker_accepts_three_hz_interval(self):
+    tracker = ShortTermTracker()
+    tracker.update([Detection(2, 0.9, (0.1, 0.1, 0.3, 0.3))], 1_000_000_000)
+    updated = tracker.update([Detection(2, 0.9, (0.11, 0.1, 0.31, 0.3))], 1_340_000_000)[0]
+    self.assertTrue(updated.prediction_valid)
+
 
 class TestDistanceGate(unittest.TestCase):
   def test_sp_calibration_camera_ground_projection(self):
@@ -170,6 +176,10 @@ class TestRoadPlane(unittest.TestCase):
 
 
 class TestResourceGovernor(unittest.TestCase):
+  def test_cold_start_duration_is_not_resource_pressure(self):
+    self.assertIsNone(object_duration_sample({"kind": "result", "duration_ms": 2000.0, "warmup": True}))
+    self.assertEqual(object_duration_sample({"kind": "result", "duration_ms": 75.0, "warmup": False}), 75.0)
+
   def test_degrade_then_pause(self):
     governor = ResourceGovernor()
     pressure = ResourceSample(model_p95_ms=70.0)

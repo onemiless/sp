@@ -15,7 +15,7 @@ from openpilot.selfdrive.objectd.constants import (DEGRADED_INFERENCE_HZ, MAX_RE
                                                    NORMAL_INFERENCE_HZ, PUBLISH_HZ, SCHEMA_VERSION)
 from openpilot.selfdrive.objectd.geometry import estimate_camera_ground_distance
 from openpilot.selfdrive.objectd.model_runner import model_hash
-from openpilot.selfdrive.objectd.resource import ResourceGovernor, ResourceMode, ResourceSample
+from openpilot.selfdrive.objectd.resource import ResourceGovernor, ResourceMode, ResourceSample, object_duration_sample
 from openpilot.selfdrive.objectd.supervisor import RetryController, model_service_available, worker_timed_out
 from openpilot.selfdrive.objectd.worker import worker_main
 
@@ -185,7 +185,9 @@ def main() -> None:
       for worker_message in worker.drain():
         if worker_message["kind"] == "result":
           last_result = worker_message
-          object_times_ms.append(float(worker_message["duration_ms"]))
+          duration_sample = object_duration_sample(worker_message)
+          if duration_sample is not None:
+            object_times_ms.append(duration_sample)
           error_code = "none"
           inference_updated = True
         elif worker_message["kind"] == "error":

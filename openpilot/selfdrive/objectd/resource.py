@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from enum import IntEnum
+import math
 
 from openpilot.selfdrive.objectd.constants import ResourceThresholds
 
@@ -19,6 +20,16 @@ class ResourceSample:
   memory_percent: float = 0.0
   thermal_ok: bool = True
   model_alive: bool = True
+
+
+def object_duration_sample(message: dict) -> float | None:
+  if message.get("kind") != "result" or message.get("warmup", False):
+    return None
+  try:
+    duration_ms = float(message["duration_ms"])
+  except (KeyError, TypeError, ValueError):
+    return None
+  return duration_ms if math.isfinite(duration_ms) and duration_ms >= 0.0 else None
 
 
 class ResourceGovernor:

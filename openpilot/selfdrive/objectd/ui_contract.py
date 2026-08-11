@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 import math
 
-from openpilot.selfdrive.objectd.constants import MAX_RESULT_AGE_MS, MAX_UI_FRAME_DELTA
+from openpilot.selfdrive.objectd.constants import MAX_RESULT_AGE_MS, MAX_UI_FRAME_DELTA, NORMAL_INFERENCE_HZ
 
 
 @dataclass(frozen=True)
@@ -29,7 +29,7 @@ def should_render_overlay(value: OverlayGateInput) -> bool:
   if value.debug:
     if value.state not in ("running", "degraded"):
       return False
-  elif not value.result_valid or value.state != "running" or value.inference_frequency_hz < 4.0:
+  elif not value.result_valid or value.state != "running" or value.inference_frequency_hz < NORMAL_INFERENCE_HZ:
     return False
   if value.current_timestamp_eof <= 0 or value.current_frame_id < value.source_frame_id:
     return False

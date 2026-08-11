@@ -54,6 +54,7 @@ def worker_main(output_queue, control_queue) -> None:
 
   frequency_hz = NORMAL_INFERENCE_HZ
   last_inference = 0.0
+  inference_count = 0
   _put_latest(output_queue, {"kind": "ready", "mono_time": time.monotonic()})
   while True:
     try:
@@ -92,6 +93,7 @@ def worker_main(output_queue, control_queue) -> None:
       duration_ms = (time.perf_counter() - started) * 1000.0
       _put_latest(output_queue, {
         "kind": "result",
+        "warmup": inference_count == 0,
         "source_width": int(frame.width),
         "source_height": int(frame.height),
         "source_frame_id": int(client.frame_id),
@@ -101,6 +103,7 @@ def worker_main(output_queue, control_queue) -> None:
         "dropped": dropped,
         "mono_time": time.monotonic(),
       })
+      inference_count += 1
       last_inference = now
     except Exception as exc:
       _put_latest(output_queue, {

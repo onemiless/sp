@@ -1,12 +1,14 @@
 import unittest
 
+from openpilot.selfdrive.objectd.constants import (DEGRADED_INFERENCE_HZ, MAX_RESULT_AGE_MS, MAX_UI_FRAME_DELTA,
+                                                   NORMAL_INFERENCE_HZ, TRACK_MAX_PREDICTION_S)
 from openpilot.selfdrive.objectd.ui_contract import OverlayGateInput, map_normalized_bbox, should_render_overlay
 
 
 def valid_input(**overrides):
   values = {
     "current_stream_road": True, "message_stream_road": True, "service_alive": True, "service_valid": True,
-    "state": "running", "result_valid": True, "debug": False, "inference_frequency_hz": 5.0,
+    "state": "running", "result_valid": True, "debug": False, "inference_frequency_hz": 3.0,
     "current_frame_id": 105, "source_frame_id": 100, "current_timestamp_eof": 1_200_000_000,
     "source_timestamp_eof": 1_000_000_000, "publish_age_ms": 220.0,
   }
@@ -23,13 +25,21 @@ class TestOverlayGate(unittest.TestCase):
     self.assertFalse(should_render_overlay(valid_input(message_stream_road=False)))
 
   def test_stale_or_future_frame_hidden(self):
-    self.assertFalse(should_render_overlay(valid_input(publish_age_ms=301.0)))
+    self.assertFalse(should_render_overlay(valid_input(publish_age_ms=501.0)))
     self.assertFalse(should_render_overlay(valid_input(current_frame_id=99)))
-    self.assertFalse(should_render_overlay(valid_input(current_frame_id=107)))
+    self.assertFalse(should_render_overlay(valid_input(current_frame_id=111)))
 
   def test_low_frequency_only_debug(self):
     self.assertFalse(should_render_overlay(valid_input(state="degraded", result_valid=False, inference_frequency_hz=2.0)))
     self.assertTrue(should_render_overlay(valid_input(state="degraded", result_valid=False, debug=True, inference_frequency_hz=2.0)))
+
+  def test_three_hz_display_contract(self):
+    self.assertEqual(NORMAL_INFERENCE_HZ, 3.0)
+    self.assertEqual(DEGRADED_INFERENCE_HZ, 2.0)
+    self.assertEqual(MAX_RESULT_AGE_MS, 500.0)
+    self.assertEqual(MAX_UI_FRAME_DELTA, 10)
+    self.assertEqual(TRACK_MAX_PREDICTION_S, 0.5)
+    self.assertFalse(should_render_overlay(valid_input(inference_frequency_hz=2.9)))
 
 
 class TestBboxMapping(unittest.TestCase):
