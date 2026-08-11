@@ -8,10 +8,9 @@ from msgq.visionipc import VisionIpcClient, VisionStreamType
 from openpilot.selfdrive.objectd.constants import NORMAL_INFERENCE_HZ
 from openpilot.selfdrive.objectd.model_runner import ObjectModelRunner
 from openpilot.selfdrive.objectd.postprocess import decode_yolox
-from openpilot.selfdrive.objectd.preprocess import letterbox_rgb
+from openpilot.selfdrive.objectd.preprocess import letterbox_nv12
 from openpilot.selfdrive.objectd.supervisor import stream_connect_timed_out
 from openpilot.selfdrive.objectd.tracker import ShortTermTracker
-from openpilot.system.camerad.snapshot import extract_image
 
 
 ROAD_STREAM = VisionStreamType.VISION_STREAM_ROAD
@@ -76,8 +75,7 @@ def worker_main(output_queue, control_queue) -> None:
 
     started = time.perf_counter()
     try:
-      rgb = extract_image(frame)
-      tensor, transform = letterbox_rgb(rgb)
+      tensor, transform = letterbox_nv12(frame)
       output = runner.run(tensor)
       detections, dropped = decode_yolox(output, transform)
       source_timestamp_eof = int(client.timestamp_eof)

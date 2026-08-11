@@ -9,13 +9,37 @@ from openpilot.selfdrive.objectd.constants import DetectorThresholds
 from openpilot.selfdrive.objectd.geometry import DistanceGateInput, DistanceInvalidReason, gate_metric_distance, intersect_local_ground
 from openpilot.selfdrive.objectd.model_runner import model_artifact_available
 from openpilot.selfdrive.objectd.postprocess import Detection, decode_yolox, decode_yolox_grid
-from openpilot.selfdrive.objectd.preprocess import invert_letterbox_xyxy, letterbox_rgb
+from openpilot.selfdrive.objectd.preprocess import invert_letterbox_xyxy, letterbox_nv12, letterbox_rgb
 from openpilot.selfdrive.objectd.resource import ResourceGovernor, ResourceMode, ResourceSample
 from openpilot.selfdrive.objectd.road_plane import fit_road_plane
 from openpilot.selfdrive.objectd.tracker import ShortTermTracker
 
 
 class TestPreprocess(unittest.TestCase):
+  def test_nv12_letterbox_matches_full_rgb_conversion(self):
+    class FakeVisionBuf:
+      width = 8
+      height = 4
+      stride = 10
+      uv_offset = stride * height
+
+    buf = FakeVisionBuf()
+    uv_height = 16
+    raw = np.zeros(buf.uv_offset + buf.stride * uv_height, dtype=np.uint8)
+    y = raw[:buf.uv_offset].reshape(buf.height, buf.stride)
+    y[:, :buf.width] = np.arange(buf.height * buf.width, dtype=np.uint8).reshape(buf.height, buf.width) + 80
+    uv = raw[buf.uv_offset:].reshape(uv_height, buf.stride)
+    uv[:buf.height // 2, :buf.width:2] = [[90, 100, 110, 120], [130, 140, 150, 160]]
+    uv[:buf.height // 2, 1:buf.width:2] = [[170, 160, 150, 140], [130, 120, 110, 100]]
+    buf.data = memoryview(raw)
+
+    from openpilot.system.camerad.snapshot import extract_image
+    expected, expected_transform = letterbox_rgb(extract_image(buf), (32, 32))
+    actual, actual_transform = letterbox_nv12(buf, (32, 32))
+
+    np.testing.assert_array_equal(actual, expected)
+    self.assertEqual(actual_transform, expected_transform)
+
   def test_letterbox_round_trip_non_square(self):
     image = np.zeros((120, 200, 3), dtype=np.uint8)
     tensor, transform = letterbox_rgb(image)
