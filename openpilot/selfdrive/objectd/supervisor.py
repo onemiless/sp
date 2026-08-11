@@ -12,6 +12,10 @@ def worker_timed_out(last_message_s: float, received_message: bool, now_s: float
   return now_s - last_message_s > deadline_s
 
 
+def model_service_available(seen: bool, alive: bool) -> bool:
+  return not seen or alive
+
+
 def stream_connect_timed_out(started_s: float, now_s: float, timeout_s: float) -> bool:
   return timeout_s >= 0.0 and now_s - started_s >= timeout_s
 

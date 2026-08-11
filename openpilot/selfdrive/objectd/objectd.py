@@ -13,7 +13,7 @@ from openpilot.selfdrive.objectd.constants import (DEGRADED_INFERENCE_HZ, MAX_RE
                                                    NORMAL_INFERENCE_HZ, PUBLISH_HZ, SCHEMA_VERSION)
 from openpilot.selfdrive.objectd.model_runner import model_hash
 from openpilot.selfdrive.objectd.resource import ResourceGovernor, ResourceMode, ResourceSample
-from openpilot.selfdrive.objectd.supervisor import RetryController, worker_timed_out
+from openpilot.selfdrive.objectd.supervisor import RetryController, model_service_available, worker_timed_out
 from openpilot.selfdrive.objectd.worker import worker_main
 
 
@@ -153,7 +153,7 @@ def main() -> None:
         object_p95_ms=_percentile(object_times_ms, 95),
         memory_percent=float(device.memoryUsagePercent) if sm.seen["deviceState"] else 0.0,
         thermal_ok=(not sm.seen["deviceState"] or device.thermalStatus < log.DeviceState.ThermalStatus.overheated),
-        model_alive=sm.alive["modelV2"],
+        model_alive=model_service_available(sm.seen["modelV2"], sm.alive["modelV2"]),
       )
       mode = governor.update(resource_sample, now_s)
 
