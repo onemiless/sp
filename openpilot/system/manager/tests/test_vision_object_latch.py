@@ -34,6 +34,19 @@ class TestVisionObjectSessionLatch(unittest.TestCase):
     params.enabled = True
     self.assertTrue(latch(True, params, FakeCP("tesla")))
 
+  def test_waits_for_tesla_car_params_after_rising_edge(self):
+    latch = VisionObjectSessionLatch()
+    params = FakeParams(True)
+    self.assertFalse(latch(True, params, FakeCP("")))
+    self.assertTrue(latch(True, params, FakeCP("tesla")))
+
+  def test_disabled_at_rising_edge_cannot_enable_onroad(self):
+    latch = VisionObjectSessionLatch()
+    params = FakeParams(False)
+    self.assertFalse(latch(True, params, FakeCP("")))
+    params.enabled = True
+    self.assertFalse(latch(True, params, FakeCP("tesla")))
+
   def test_disabled_wrong_brand_or_param(self):
     self.assertFalse(VisionObjectSessionLatch()(True, FakeParams(True), FakeCP("toyota")))
     self.assertFalse(VisionObjectSessionLatch()(True, FakeParams(False), FakeCP("tesla")))
