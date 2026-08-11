@@ -20,6 +20,11 @@ class TestScopeContract(unittest.TestCase):
     self.assertIn("if GetOption('objectd')", sconstruct)
     self.assertIn('PythonProcess("vision_object_recorder"', process_config)
 
+  def test_tesla_settings_do_not_gate_by_device_type(self):
+    settings = (REPO / "openpilot/selfdrive/ui/sunnypilot/layouts/settings/vehicle/brands/tesla.py").read_text(encoding="utf-8")
+    self.assertNotIn("HARDWARE.get_device_type()", settings)
+    self.assertNotIn("vision_object_distance_toggle.action_item.set_enabled(False)", settings)
+
   def test_feature_does_not_import_control_chain_modules(self):
     sources = list((REPO / "openpilot/selfdrive/objectd").glob("*.py"))
     sources += [REPO / "openpilot/selfdrive/ui/onroad/vision_object_renderer.py",

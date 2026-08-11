@@ -5,7 +5,7 @@ import platform
 from opendbc.car.structs import car
 from openpilot.cereal import custom
 from openpilot.common.params import Params
-from openpilot.common.hardware import HARDWARE, PC, TICI
+from openpilot.common.hardware import PC, TICI
 from openpilot.system.manager.process import PythonProcess, NativeProcess, DaemonProcess
 from openpilot.system.manager.vision_object_latch import VisionObjectSessionLatch
 from openpilot.common.hardware.hw import Paths
@@ -115,7 +115,7 @@ def and_(*fns):
 def not_(*fns):
   return lambda *args: operator.not_(*(fn(*args) for fn in fns))
 
-vision_object_session_latch = VisionObjectSessionLatch(HARDWARE.get_device_type, model_artifact_available)
+vision_object_session_latch = VisionObjectSessionLatch(model_artifact_available)
 
 def vision_object_recording(started: bool, params: Params, CP: car.CarParams) -> bool:
   return vision_object_session_latch(started, params, CP) and params.get_bool("VisionObjectRecordValidation")

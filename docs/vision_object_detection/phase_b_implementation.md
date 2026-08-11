@@ -16,7 +16,7 @@ Phase B source implementation is present, with fail-closed service behavior and 
 
 `VisionObjectStateSP` reuses reserved10 ID `0xcb9fd56c7057593a`; `visionObjectStateSP` keeps union ordinal `@136`; service frequency is fixed at 5 Hz. Objects are capped at 32. Bounding-box, velocity and position-uncertainty components use named schema fields. The worker connects directly to ROAD VisionIPC and only returns bounded metadata through a spawned-process queue.
 
-The manager latch reads device type `tizi`, Tesla brand, enable parameter and compiled-artifact provenance only at the offroad-to-onroad edge. Worker retry is 1/2/4/8/30 seconds with a five-failures-in-ten-minutes session fuse. ROAD VisionIPC connection has a five-second deadline and enters the same retry path on failure. modeld pressure degrades objectd from 5 Hz to 2 Hz, then pauses it; modeld loss, overheat or 90% memory pauses immediately.
+The manager latch reads Tesla brand, enable parameter and compiled-artifact provenance only at the offroad-to-onroad edge. Worker retry is 1/2/4/8/30 seconds with a five-failures-in-ten-minutes session fuse. ROAD VisionIPC connection has a five-second deadline and enters the same retry path on failure. modeld pressure degrades objectd from 5 Hz to 2 Hz, then pauses it; modeld loss, overheat or 90% memory pauses immediately.
 
 ## Tests and results
 

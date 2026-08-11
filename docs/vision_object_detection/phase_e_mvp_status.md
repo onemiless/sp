@@ -13,7 +13,7 @@ Tesla/C3X settings and the normal ROAD overlay source are implemented, but Phase
 - `openpilot/selfdrive/ui/sunnypilot/ui_state.py`
 - onroad renderer/CameraView/AugmentedRoadView files listed in Phase C
 
-Settings are visible only on `tizi`; the detector main switch is only editable offroad and when a manifest-matching compiled artifact exists; the distance switch is disabled; debug is development-only. All detector, overlay, distance-display and debug Params default to **false**. The model is prepared only by the explicit `scons --objectd` target.
+Settings are visible in the Tesla panel without a device-type gate; the detector main switch is only editable offroad and when a manifest-matching compiled artifact exists; the distance-display switch is available but the Phase D producer still fails closed with all distances invalid; debug is development-only. All detector, overlay, distance-display and debug Params default to **false**. The model is prepared only by the explicit `scons --objectd` target.
 
 No setting or message is connected to `controlsd`, `radard`, planners, `carcontroller`, CAN output or Panda. A static forbidden-path search found no such imports in the new feature paths. Submodules remain at their recorded commits and have no source changes.
 

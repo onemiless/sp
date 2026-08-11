@@ -10,7 +10,6 @@ scons --objectd
 
 The manager starts `objectd` only when all of the following are true at the offroad-to-onroad edge:
 
-- device type is `tizi`;
 - car brand is Tesla;
 - `VisionObjectDetectionEnabled` is true;
 - the compiled artifact and its ONNX SHA-256 provenance stamp are present.

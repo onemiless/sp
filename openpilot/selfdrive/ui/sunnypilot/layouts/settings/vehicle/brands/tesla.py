@@ -15,7 +15,6 @@ from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.tuning_presets import
 )
 from openpilot.selfdrive.objectd.model_runner import model_artifact_available
 from openpilot.selfdrive.ui.ui_state import ui_state
-from openpilot.common.hardware import HARDWARE
 from openpilot.system.ui.lib.application import gui_app
 from openpilot.system.ui.lib.multilang import tr
 from openpilot.system.ui.sunnypilot.widgets.list_view import button_item_sp, multiple_button_item_sp, option_item_sp, toggle_item_sp
@@ -205,8 +204,7 @@ class TeslaSettings(BrandSettings):
     self.vision_object_distance_toggle = toggle_item_sp(
       title=tr("Approximate Object Distance"),
       param="VisionObjectDistanceDisplay",
-      description=tr("Experimental monocular estimate. Unavailable until vehicle geometry and road-plane validation are complete."),
-      enabled=lambda: False,
+      description=tr("Shows only validated experimental monocular estimates. Invalid or unavailable estimates remain hidden."),
     )
     self.vision_object_debug_toggle = toggle_item_sp(
       title=tr("Vision Object Debug Overlay"),
@@ -348,14 +346,13 @@ class TeslaSettings(BrandSettings):
     gui_app.push_widget(TeslaMpcSettingsLayout(lambda: gui_app.pop_widget()))
 
   def update_settings(self):
-    is_c3x = HARDWARE.get_device_type() == "tizi"
     for item in (self.vision_object_detection_toggle, self.vision_object_overlay_toggle,
                  self.vision_object_distance_toggle, self.vision_object_debug_toggle):
-      item.set_visible(is_c3x)
-    self.vision_object_detection_toggle.action_item.set_enabled(is_c3x and ui_state.is_offroad() and model_artifact_available())
-    self.vision_object_overlay_toggle.action_item.set_enabled(is_c3x)
-    self.vision_object_distance_toggle.action_item.set_enabled(False)
-    self.vision_object_debug_toggle.action_item.set_enabled(is_c3x and not ui_state.is_sp_release)
+      item.set_visible(True)
+    self.vision_object_detection_toggle.action_item.set_enabled(ui_state.is_offroad() and model_artifact_available())
+    self.vision_object_overlay_toggle.action_item.set_enabled(True)
+    self.vision_object_distance_toggle.action_item.set_enabled(True)
+    self.vision_object_debug_toggle.action_item.set_enabled(not ui_state.is_sp_release)
 
     coop_steering_desc = (
       f"{tr('Converts light steering input into steering-wheel rotation.')}<br>" +
