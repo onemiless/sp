@@ -1,16 +1,29 @@
 import json
-from pathlib import Path
 import pickle
+from pathlib import Path
 
 import numpy as np
 
-from openpilot.common.file_chunker import open_file_chunked
+from openpilot.common.file_chunker import get_existing_chunks, open_file_chunked
 
 
 OBJECTD_DIR = Path(__file__).resolve().parent
 MODELS_DIR = OBJECTD_DIR / "models"
 MANIFEST_PATH = MODELS_DIR / "object_detector_manifest.json"
 MODEL_PKL_PATH = MODELS_DIR / "object_detector_tinygrad.pkl"
+MODEL_COMPILE_STAMP_PATH = MODELS_DIR / "object_detector_tinygrad.sha256"
+
+
+def model_artifact_available(model_path: Path = MODEL_PKL_PATH, manifest_path: Path = MANIFEST_PATH,
+                             stamp_path: Path = MODEL_COMPILE_STAMP_PATH) -> bool:
+  try:
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    expected_hash = str(manifest["model"]["onnxSha256"]).lower()
+    compiled_hash = stamp_path.read_text(encoding="utf-8").strip().lower()
+    chunks_exist = all(Path(path).is_file() for path in get_existing_chunks(str(model_path)))
+    return len(expected_hash) == 64 and compiled_hash == expected_hash and chunks_exist
+  except (FileNotFoundError, KeyError, OSError, TypeError, ValueError, json.JSONDecodeError):
+    return False
 
 
 def model_hash() -> str:

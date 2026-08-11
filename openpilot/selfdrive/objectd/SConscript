@@ -1,6 +1,8 @@
 import glob
+import json
 import os
 import sys
+from pathlib import Path
 
 from SCons.Script import Action, Value
 
@@ -33,6 +35,7 @@ else:
   tg_flags = 'DEV=CPU:LLVM'
 
 pkl_path = File(f'{models_dir}/object_detector_tinygrad.pkl').abspath
+compile_stamp_path = File(f'{models_dir}/object_detector_tinygrad.sha256').abspath
 # Two 45 MiB chunks are a conservative bound for this 3.7 MiB ONNX model.
 chunk_targets = get_chunk_targets(pkl_path, 90 * 1024 * 1024)
 compile_script = File(f'{objectd_dir}/compile_object_model.py')
@@ -40,9 +43,11 @@ compile3_script = File('#tinygrad_repo/examples/openpilot/compile3.py')
 
 def do_chunk(target, source, env):
   chunk_file(pkl_path, chunk_targets)
+  manifest_data = json.loads(Path(manifest.abspath).read_text(encoding='utf-8'))
+  Path(compile_stamp_path).write_text(manifest_data['model']['onnxSha256'].lower() + '\n', encoding='utf-8')
 
 lenv.Command(
-  chunk_targets,
+  chunk_targets + [compile_stamp_path],
   tinygrad_files + onnx_node + [manifest, compile_script, compile3_script, Value(tg_flags), Value(chunk_targets)],
   [f'{tg_flags} PYTHONPATH={Dir("#tinygrad_repo").abspath} {sys.executable} {compile_script.abspath} '
    f'--onnx {onnx_path} --manifest {manifest.abspath} --output {pkl_path} --compile3 {compile3_script.abspath}',

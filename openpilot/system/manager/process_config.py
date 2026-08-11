@@ -14,6 +14,7 @@ from openpilot.sunnypilot.mapd.mapd_manager import MAPD_PATH
 
 from openpilot.sunnypilot.models.helpers import get_active_model_runner
 from openpilot.sunnypilot.sunnylink.utils import sunnylink_need_register, sunnylink_ready, use_sunnylink_uploader
+from openpilot.selfdrive.objectd.model_runner import model_artifact_available
 
 WEBCAM = os.getenv("USE_WEBCAM") is not None
 
@@ -114,7 +115,10 @@ def and_(*fns):
 def not_(*fns):
   return lambda *args: operator.not_(*(fn(*args) for fn in fns))
 
-vision_object_session_latch = VisionObjectSessionLatch(HARDWARE.get_device_type)
+vision_object_session_latch = VisionObjectSessionLatch(HARDWARE.get_device_type, model_artifact_available)
+
+def vision_object_recording(started: bool, params: Params, CP: car.CarParams) -> bool:
+  return vision_object_session_latch(started, params, CP) and params.get_bool("VisionObjectRecordValidation")
 
 procs = [
   DaemonProcess("manage_athenad", "openpilot.system.athena.manage_athenad", "AthenadPid"),
@@ -134,6 +138,8 @@ procs = [
 
   PythonProcess("modeld", "openpilot.selfdrive.modeld.modeld", and_(only_onroad, is_stock_model)),
   PythonProcess("objectd", "openpilot.selfdrive.objectd.objectd", vision_object_session_latch, restart_if_crash=False),
+  PythonProcess("vision_object_recorder", "openpilot.selfdrive.objectd.tools.validation_recorder",
+                vision_object_recording, restart_if_crash=False),
   #PythonProcess("dmonitoringmodeld", "openpilot.selfdrive.modeld.dmonitoringmodeld", driverview, enabled=(WEBCAM or not PC)),
 
   PythonProcess("sensord", "openpilot.system.sensord.sensord", only_onroad, enabled=not PC),

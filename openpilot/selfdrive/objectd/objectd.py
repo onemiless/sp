@@ -82,19 +82,23 @@ def _percentile(values: deque[float], percentile: float) -> float:
 
 def _empty_object_payload(track: dict) -> dict:
   bbox = [float(v) for v in track["bbox"]]
+  velocity = [float(v) for v in track["velocity"]]
   return {
     "trackId": int(track["track_id"]),
     "classId": int(track["class_id"]),
     "confidence": float(track["confidence"]),
-    "bboxNormalized": bbox,
-    "bboxVelocityNormalized": [float(v) for v in track["velocity"]],
+    "bboxNormalized": {"left": bbox[0], "top": bbox[1], "right": bbox[2], "bottom": bbox[3]},
+    "bboxVelocityNormalized": {
+      "leftPerSecond": velocity[0], "topPerSecond": velocity[1],
+      "rightPerSecond": velocity[2], "bottomPerSecond": velocity[3],
+    },
     "bboxPredictionValid": bool(track["prediction_valid"]),
     "bboxClipped": bool(track["bbox_clipped"]),
     "contactU": (bbox[0] + bbox[2]) / 2.0,
     "contactV": bbox[3],
     "contactPointValid": False,
     "x": 0.0, "y": 0.0, "z": 0.0,
-    "positionStd": [0.0, 0.0, 0.0],
+    "positionStd": {"x": 0.0, "y": 0.0, "z": 0.0},
     "distance": 0.0, "distanceStd": 0.0, "distanceValid": False,
     "rangeBand": "unknown",
     "relativeSpeed": 0.0, "relativeSpeedValid": False,

@@ -69,7 +69,7 @@ Phase B through Phase E are therefore intentionally not started. In particular:
 - No distance value is produced or cached.
 - No objectd frequency/resource policy is claimed as device-tested.
 - No integration is made with `controlsd`, `radard`, planner code, `carcontroller`, CAN, or Panda.
-- No parameter default is changed. The request to use `VisionObjectDetectionEnabled=true` would take precedence over the plan's `false` default only if a later implementation is authorized by a successful Phase A gate.
+- `VisionObjectDetectionEnabled` remains false by default. It must not default on before the Phase A device/resource gate passes.
 
 ## Validation-layer status
 

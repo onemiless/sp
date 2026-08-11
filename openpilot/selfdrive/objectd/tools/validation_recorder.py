@@ -9,6 +9,7 @@ import time
 
 from openpilot.cereal import messaging
 from openpilot.common.hardware import HARDWARE
+from openpilot.common.hardware.hw import Paths
 from openpilot.common.params import Params
 
 
@@ -16,6 +17,7 @@ MAX_FILE_BYTES = 50 * 1024 * 1024
 MAX_DIRECTORY_BYTES = 500 * 1024 * 1024
 PARAM_KEYS = ("VisionObjectDetectionEnabled", "VisionObjectOverlay", "VisionObjectDistanceDisplay",
               "VisionObjectDebugOverlay", "VisionObjectRecordValidation")
+DEFAULT_OUTPUT_DIR = Path(Paths.log_root()).parent / "vision_object_validation"
 
 
 def _sha256(path: Path) -> str:
@@ -62,7 +64,8 @@ def _record(state) -> dict:
     "droppedObjectCount": int(state.droppedObjectCount),
     "objects": [{
       "trackId": int(obj.trackId), "classId": int(obj.classId), "confidence": float(obj.confidence),
-      "bboxNormalized": [float(value) for value in obj.bboxNormalized],
+      "bboxNormalized": [float(obj.bboxNormalized.left), float(obj.bboxNormalized.top),
+                         float(obj.bboxNormalized.right), float(obj.bboxNormalized.bottom)],
       "distanceValid": bool(obj.distanceValid), "distance": float(obj.distance) if obj.distanceValid else 0.0,
     } for obj in list(state.objects)[:32]],
   }
@@ -70,7 +73,7 @@ def _record(state) -> dict:
 
 def main() -> None:
   parser = argparse.ArgumentParser(description=__doc__)
-  parser.add_argument("--output-dir", type=Path, required=True)
+  parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
   args = parser.parse_args()
   args.output_dir.mkdir(parents=True, exist_ok=True)
   _prune(args.output_dir, MAX_FILE_BYTES)
@@ -86,6 +89,8 @@ def main() -> None:
         if sm.updated["visionObjectStateSP"]:
           stream.write(json.dumps(_record(sm["visionObjectStateSP"]), separators=(",", ":")) + "\n")
           stream.flush()
+  except KeyboardInterrupt:
+    pass
   except (OSError, ValueError) as exc:
     raise SystemExit(f"validation recording stopped without affecting objectd: {exc}") from exc
   finally:

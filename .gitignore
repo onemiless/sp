@@ -48,6 +48,7 @@ bin/
 *.stats
 *.pkl
 openpilot/selfdrive/objectd/models/object_detector.onnx
+openpilot/selfdrive/objectd/models/object_detector_tinygrad.sha256
 *.pkl*
 config.json
 compile_commands.json

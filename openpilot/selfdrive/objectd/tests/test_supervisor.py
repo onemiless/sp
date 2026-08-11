@@ -1,6 +1,6 @@
 import unittest
 
-from openpilot.selfdrive.objectd.supervisor import RetryController
+from openpilot.selfdrive.objectd.supervisor import RetryController, stream_connect_timed_out
 
 
 class TestRetryController(unittest.TestCase):
@@ -21,6 +21,10 @@ class TestRetryController(unittest.TestCase):
       retry.record_failure(t)
     retry.record_failure(700.0)
     self.assertFalse(retry.fused)
+
+  def test_stream_connect_deadline(self):
+    self.assertFalse(stream_connect_timed_out(10.0, 14.9, 5.0))
+    self.assertTrue(stream_connect_timed_out(10.0, 15.0, 5.0))
 
 
 if __name__ == "__main__":

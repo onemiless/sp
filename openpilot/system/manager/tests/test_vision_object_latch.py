@@ -39,6 +39,10 @@ class TestVisionObjectSessionLatch(unittest.TestCase):
     self.assertFalse(VisionObjectSessionLatch(lambda: "tizi")(True, FakeParams(True), FakeCP("toyota")))
     self.assertFalse(VisionObjectSessionLatch(lambda: "tizi")(True, FakeParams(False), FakeCP("tesla")))
 
+  def test_missing_model_artifact_fails_closed(self):
+    latch = VisionObjectSessionLatch(lambda: "tizi", lambda: False)
+    self.assertFalse(latch(True, FakeParams(True), FakeCP("tesla")))
+
 
 if __name__ == "__main__":
   unittest.main()

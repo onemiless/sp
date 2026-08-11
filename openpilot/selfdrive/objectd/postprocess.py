@@ -14,6 +14,39 @@ class Detection:
   bbox_clipped: bool = False
 
 
+def decode_yolox_grid(output: np.ndarray, input_size: tuple[int, int],
+                      strides: tuple[int, ...] = (8, 16, 32)) -> np.ndarray:
+  """Decode the raw YOLOX release head into input-image xywh coordinates."""
+  predictions = np.asarray(output, dtype=np.float32)
+  if predictions.ndim not in (2, 3) or predictions.shape[-1] < 4:
+    raise ValueError("YOLOX output must have shape [N, values] or [batch, N, values]")
+
+  input_width, input_height = input_size
+  if input_width <= 0 or input_height <= 0:
+    raise ValueError("input dimensions must be positive")
+
+  grids = []
+  expanded_strides = []
+  for stride in strides:
+    if input_width % stride or input_height % stride:
+      raise ValueError(f"input size {input_size} is not divisible by stride {stride}")
+    width, height = input_width // stride, input_height // stride
+    grid_x, grid_y = np.meshgrid(np.arange(width), np.arange(height))
+    grid = np.stack((grid_x, grid_y), axis=2).reshape(-1, 2)
+    grids.append(grid)
+    expanded_strides.append(np.full((len(grid), 1), stride, dtype=np.float32))
+
+  grid = np.concatenate(grids).astype(np.float32, copy=False)
+  expanded_stride = np.concatenate(expanded_strides)
+  if predictions.shape[-2] != len(grid):
+    raise ValueError(f"YOLOX output has {predictions.shape[-2]} anchors, expected {len(grid)} for {input_size}")
+
+  decoded = predictions.copy()
+  decoded[..., :2] = (decoded[..., :2] + grid) * expanded_stride
+  decoded[..., 2:4] = np.exp(decoded[..., 2:4]) * expanded_stride
+  return decoded
+
+
 def bbox_iou(a: np.ndarray, b: np.ndarray) -> np.ndarray:
   a = np.asarray(a, dtype=np.float32)
   b = np.asarray(b, dtype=np.float32)
@@ -41,7 +74,7 @@ def _nms(boxes: np.ndarray, scores: np.ndarray, iou_threshold: float) -> list[in
 def decode_yolox(output: np.ndarray, transform: LetterboxTransform,
                  thresholds: DetectorThresholds | None = None) -> tuple[list[Detection], int]:
   thresholds = thresholds or DetectorThresholds()
-  predictions = np.asarray(output, dtype=np.float32)
+  predictions = decode_yolox_grid(output, (transform.input_width, transform.input_height))
   if predictions.ndim == 3 and predictions.shape[0] == 1:
     predictions = predictions[0]
   if predictions.ndim != 2 or predictions.shape[1] < 6:

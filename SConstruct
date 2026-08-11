@@ -20,6 +20,8 @@ SetOption('num_jobs', max(1, int(os.cpu_count()/(1 if "CI" in os.environ else 2)
 
 AddOption('--ccflags', action='store', type='string', default='', help='pass arbitrary flags over the command line')
 AddOption('--verbose', action='store_true', default=False, help='show full build commands')
+AddOption('--objectd', action='store_true', default=False,
+          help='build the experimental objectd model (downloads the manifest-pinned ONNX)')
 release = not os.path.exists(File('#.gitattributes').abspath) # file absent on release branch, see release_files.py
 AddOption('--minimal',
           action='store_false',
@@ -289,9 +291,11 @@ SConscript([
   'openpilot/selfdrive/controls/lib/longitudinal_mpc_lib/SConscript',
   'openpilot/selfdrive/locationd/SConscript',
   'openpilot/selfdrive/modeld/SConscript',
-  'openpilot/selfdrive/objectd/SConscript',
   'openpilot/selfdrive/ui/SConscript',
 ])
+
+if GetOption('objectd'):
+  SConscript(['openpilot/selfdrive/objectd/SConscript'])
 
 SConscript(['openpilot/sunnypilot/SConscript'])
 

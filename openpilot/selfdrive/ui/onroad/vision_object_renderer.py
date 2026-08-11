@@ -22,13 +22,15 @@ class VisionObjectRenderer:
 
   @staticmethod
   def _predicted_bbox(obj, dt_s: float) -> tuple[float, float, float, float] | None:
-    if len(obj.bboxNormalized) != 4 or len(obj.bboxVelocityNormalized) != 4:
-      return None
-    bbox = [float(v) for v in obj.bboxNormalized]
+    bbox_value = obj.bboxNormalized
+    velocity_value = obj.bboxVelocityNormalized
+    bbox = [float(bbox_value.left), float(bbox_value.top), float(bbox_value.right), float(bbox_value.bottom)]
+    velocity = [float(velocity_value.leftPerSecond), float(velocity_value.topPerSecond),
+                float(velocity_value.rightPerSecond), float(velocity_value.bottomPerSecond)]
     if dt_s > 0.0:
       if not obj.bboxPredictionValid or dt_s > TRACK_MAX_PREDICTION_S:
         return None
-      bbox = [value + float(velocity) * dt_s for value, velocity in zip(bbox, obj.bboxVelocityNormalized, strict=True)]
+      bbox = [value + rate * dt_s for value, rate in zip(bbox, velocity, strict=True)]
     bbox = [min(1.0, max(0.0, value)) for value in bbox]
     if not (bbox[0] < bbox[2] and bbox[1] < bbox[3]):
       return None

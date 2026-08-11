@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+import math
 
 from openpilot.selfdrive.objectd.constants import MAX_RESULT_AGE_MS, MAX_UI_FRAME_DELTA
 
@@ -47,7 +48,10 @@ def map_normalized_bbox(bbox: tuple[float, float, float, float], rect: tuple[flo
   rect_x, rect_y, rect_width, rect_height = rect
   scale_x, scale_y = scale
   translate_x, translate_y = translation
-  if rect_width <= 0.0 or rect_height <= 0.0 or not (0.0 < scale_x <= 1.0 and 0.0 < scale_y <= 1.0):
+  transform_values = (rect_x, rect_y, rect_width, rect_height, scale_x, scale_y, translate_x, translate_y)
+  if not all(math.isfinite(value) for value in transform_values):
+    return None
+  if rect_width <= 0.0 or rect_height <= 0.0 or scale_x <= 0.0 or scale_y <= 0.0:
     return None
   frame_width = rect_width * scale_x
   frame_height = rect_height * scale_y

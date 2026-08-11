@@ -534,8 +534,8 @@ struct VisionObjectStateSP @0xcb9fd56c7057593a {
     trackId @0 :UInt32;
     classId @1 :UInt16;
     confidence @2 :Float32;
-    bboxNormalized @3 :List(Float32);
-    bboxVelocityNormalized @4 :List(Float32);
+    bboxNormalized @3 :NormalizedBoundingBox;
+    bboxVelocityNormalized @4 :NormalizedBoundingBoxVelocity;
     bboxPredictionValid @5 :Bool;
     bboxClipped @6 :Bool;
     contactU @7 :Float32;
@@ -544,7 +544,7 @@ struct VisionObjectStateSP @0xcb9fd56c7057593a {
     x @10 :Float32;
     y @11 :Float32;
     z @12 :Float32;
-    positionStd @13 :List(Float32);
+    positionStd @13 :PositionStdDev;
     distance @14 :Float32;
     distanceStd @15 :Float32;
     distanceValid @16 :Bool;
@@ -554,6 +554,26 @@ struct VisionObjectStateSP @0xcb9fd56c7057593a {
     ttc @20 :Float32;
     ttcValid @21 :Bool;
     corridorState @22 :CorridorState;
+  }
+
+  struct NormalizedBoundingBox {
+    left @0 :Float32;
+    top @1 :Float32;
+    right @2 :Float32;
+    bottom @3 :Float32;
+  }
+
+  struct NormalizedBoundingBoxVelocity {
+    leftPerSecond @0 :Float32;
+    topPerSecond @1 :Float32;
+    rightPerSecond @2 :Float32;
+    bottomPerSecond @3 :Float32;
+  }
+
+  struct PositionStdDev {
+    x @0 :Float32;
+    y @1 :Float32;
+    z @2 :Float32;
   }
 
   enum RangeBand {

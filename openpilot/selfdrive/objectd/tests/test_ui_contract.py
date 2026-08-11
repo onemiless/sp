@@ -46,6 +46,15 @@ class TestBboxMapping(unittest.TestCase):
     self.assertAlmostEqual(center[0] + center[2] / 2.0, 510.0)
     self.assertAlmostEqual(center[1] + center[3] / 2.0, 520.0)
 
+  def test_c3x_augmented_road_crop_scale(self):
+    # 2160x1080 display, 30 px UI border, AR0231 ROAD intrinsics and 1.1x camera zoom.
+    rect = (30.0, 30.0, 2100.0, 1020.0)
+    scale = (1.1 * 1928 / rect[2], 1.1 * 1208 / rect[3])
+    center = map_normalized_bbox((0.45, 0.45, 0.55, 0.55), rect, scale)
+    self.assertIsNotNone(center)
+    self.assertAlmostEqual(center[0] + center[2] / 2.0, 1080.0)
+    self.assertAlmostEqual(center[1] + center[3] / 2.0, 540.0)
+
   def test_invalid_bbox_rejected(self):
     self.assertIsNone(map_normalized_bbox((0.8, 0.1, 0.2, 0.5), (0.0, 0.0, 100.0, 100.0), (1.0, 1.0)))
 

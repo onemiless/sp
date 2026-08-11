@@ -17,11 +17,11 @@ ROAD-only debug/formal overlay source and resource failover logic are implemente
 - `openpilot/selfdrive/objectd/tools/validation_recorder.py`
 - corresponding objectd unit tests
 
-The renderer uses the displayed frame ID/timestamp and CameraView's centered transform. It rejects WIDE immediately, rejects service/message invalidity, frames in the future, more than six frames of delta, age over 300 ms, and normal overlays below 4 Hz. Debug mode may show explicitly degraded 2 Hz output with age; normal overlay cannot. The metadata-only recorder has 50 MiB per-file and 500 MiB directory caps and never records camera frames.
+The renderer uses the displayed frame ID/timestamp and CameraView's centered crop transform. It accepts positive finite crop scales above one, rejects WIDE immediately, rejects service/message invalidity, frames in the future, more than six frames of delta, age over 300 ms, and normal overlays below 4 Hz. Debug mode may show explicitly degraded 2 Hz output with age; normal overlay cannot. The metadata-only recorder is manager-controlled by `VisionObjectRecordValidation`, has 50 MiB per-file and 500 MiB directory caps, and never records camera frames.
 
 ## Tests and results
 
-Unit tests passed for 1928x1208 ROAD letterbox corner/center mapping, invalid boxes, ROAD/WIDE gating, 300 ms/frame-delta gating and degraded debug-only behavior. Ruff, compileall and whitespace checks passed.
+Unit tests passed for 1928x1208 ROAD letterbox mapping, the real 2160x1080/AR0231 1.1x C3X crop transform, invalid boxes, ROAD/WIDE gating, 300 ms/frame-delta gating and degraded debug-only behavior. Ruff, compileall and whitespace checks passed.
 
 ## Unverified and C3X evidence
 

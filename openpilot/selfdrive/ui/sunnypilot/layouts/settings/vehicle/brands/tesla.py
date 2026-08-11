@@ -13,6 +13,7 @@ from openpilot.selfdrive.ui.sunnypilot.layouts.settings.vehicle.brands.base impo
 from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.tuning_presets import (
   MPC_PRESET_LABELS, MPC_PRESET_MOUMOU, MPC_TUNING_KEYS, apply_preset, get_preset_values, save_preset_values, write_live_values,
 )
+from openpilot.selfdrive.objectd.model_runner import model_artifact_available
 from openpilot.selfdrive.ui.ui_state import ui_state
 from openpilot.common.hardware import HARDWARE
 from openpilot.system.ui.lib.application import gui_app
@@ -351,7 +352,7 @@ class TeslaSettings(BrandSettings):
     for item in (self.vision_object_detection_toggle, self.vision_object_overlay_toggle,
                  self.vision_object_distance_toggle, self.vision_object_debug_toggle):
       item.set_visible(is_c3x)
-    self.vision_object_detection_toggle.action_item.set_enabled(is_c3x and ui_state.is_offroad())
+    self.vision_object_detection_toggle.action_item.set_enabled(is_c3x and ui_state.is_offroad() and model_artifact_available())
     self.vision_object_overlay_toggle.action_item.set_enabled(is_c3x)
     self.vision_object_distance_toggle.action_item.set_enabled(False)
     self.vision_object_debug_toggle.action_item.set_enabled(is_c3x and not ui_state.is_sp_release)

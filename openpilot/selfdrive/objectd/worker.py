@@ -9,11 +9,13 @@ from openpilot.selfdrive.objectd.constants import NORMAL_INFERENCE_HZ
 from openpilot.selfdrive.objectd.model_runner import ObjectModelRunner
 from openpilot.selfdrive.objectd.postprocess import decode_yolox
 from openpilot.selfdrive.objectd.preprocess import letterbox_rgb
+from openpilot.selfdrive.objectd.supervisor import stream_connect_timed_out
 from openpilot.selfdrive.objectd.tracker import ShortTermTracker
 from openpilot.system.camerad.snapshot import extract_image
 
 
 ROAD_STREAM = VisionStreamType.VISION_STREAM_ROAD
+STREAM_CONNECT_TIMEOUT_S = 5.0
 
 
 def _put_latest(output_queue, message: dict) -> None:
@@ -36,8 +38,19 @@ def worker_main(output_queue, control_queue) -> None:
 
   tracker = ShortTermTracker()
   client = VisionIpcClient("camerad", ROAD_STREAM, conflate=True)
+  connect_started_s = time.monotonic()
   while not client.connect(False):
-    _put_latest(output_queue, {"kind": "heartbeat", "mono_time": time.monotonic()})
+    now_s = time.monotonic()
+    try:
+      if control_queue.get_nowait().get("stop"):
+        return
+    except queue.Empty:
+      pass
+    if stream_connect_timed_out(connect_started_s, now_s, STREAM_CONNECT_TIMEOUT_S):
+      _put_latest(output_queue, {"kind": "error", "error": "streamMismatch",
+                                 "detail": "ROAD VisionIPC unavailable", "mono_time": now_s})
+      return
+    _put_latest(output_queue, {"kind": "heartbeat", "mono_time": now_s})
     time.sleep(0.1)
 
   frequency_hz = NORMAL_INFERENCE_HZ

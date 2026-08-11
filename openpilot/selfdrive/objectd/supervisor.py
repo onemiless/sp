@@ -6,6 +6,10 @@ FAILURE_WINDOW_S = 600.0
 FAILURE_FUSE_COUNT = 5
 
 
+def stream_connect_timed_out(started_s: float, now_s: float, timeout_s: float) -> bool:
+  return timeout_s >= 0.0 and now_s - started_s >= timeout_s
+
+
 class RetryController:
   def __init__(self):
     self.failures: deque[float] = deque()

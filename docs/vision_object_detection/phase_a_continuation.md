@@ -33,6 +33,12 @@ Results:
 - a synthetic 1928x1208 black frame completed desktop ONNX Runtime inference, produced finite output, and passed the decoder; one measured desktop run was 7.45 ms;
 - tinygrad parsed the graph, but desktop tinygrad execution/compile could not complete because the required LLVM/clang renderer toolchain was absent.
 
+## Post-review corrections
+
+- The frozen release ONNX exposes the raw YOLOX head. `objectd` now applies the upstream grid/stride and exponential width/height decode before NMS. A deterministic differential check matches the frozen upstream `demo_postprocess` implementation.
+- Normal builds no longer fetch the detector. `scons --objectd` is required to create the compiled artifact and its ONNX SHA-256 provenance stamp.
+- The detector defaults to disabled and the manager refuses to start it when the compiled artifact/stamp is absent or stale.
+
 ## Unverified and C3X evidence
 
 - The committed dataset file is only an example; precision, recall, threshold selection, and distance accuracy are unverified.
