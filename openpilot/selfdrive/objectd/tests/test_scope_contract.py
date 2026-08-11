@@ -25,6 +25,10 @@ class TestScopeContract(unittest.TestCase):
     self.assertNotIn("HARDWARE.get_device_type()", settings)
     self.assertNotIn("vision_object_distance_toggle.action_item.set_enabled(False)", settings)
 
+  def test_camera_view_defers_pyray_type_annotations(self):
+    camera_view = (REPO / "openpilot/selfdrive/ui/onroad/cameraview.py").read_text(encoding="utf-8")
+    self.assertTrue(camera_view.startswith("from __future__ import annotations\n"))
+
   def test_feature_does_not_import_control_chain_modules(self):
     sources = list((REPO / "openpilot/selfdrive/objectd").glob("*.py"))
     sources += [REPO / "openpilot/selfdrive/ui/onroad/vision_object_renderer.py",
