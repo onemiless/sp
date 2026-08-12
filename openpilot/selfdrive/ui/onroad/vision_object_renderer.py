@@ -4,15 +4,27 @@ import pyray as rl
 from msgq.visionipc import VisionStreamType
 
 from openpilot.selfdrive.objectd.constants import CLASS_NAMES, TRACK_MAX_PREDICTION_S
-from openpilot.selfdrive.objectd.ui_contract import OverlayGateInput, should_render_overlay
+from openpilot.selfdrive.objectd.ui_contract import (OverlayGateInput, StatusBadgeInput, object_status_badge,
+                                                     should_render_overlay)
 from openpilot.selfdrive.ui.ui_state import ui_state
 from openpilot.system.ui.lib.application import FontWeight, gui_app
+from openpilot.system.ui.lib.text_measure import measure_text_cached
 
 
 ROAD_STREAM = VisionStreamType.VISION_STREAM_ROAD
 BOX_COLOR = rl.Color(60, 210, 255, 220)
 DEBUG_COLOR = rl.Color(255, 190, 60, 220)
 TEXT_COLOR = rl.Color(255, 255, 255, 255)
+BADGE_COLORS = {
+  "running": rl.Color(60, 210, 110, 255),
+  "wide": rl.Color(255, 196, 60, 255),
+  "degraded": rl.Color(255, 140, 45, 255),
+  "error": rl.Color(245, 65, 65, 255),
+  "waiting": rl.Color(150, 160, 170, 255),
+  "disabled": rl.Color(100, 105, 110, 255),
+}
+BADGE_FONT_SIZE = 34
+BADGE_HEIGHT = 62
 
 
 class VisionObjectRenderer:
@@ -37,6 +49,7 @@ class VisionObjectRenderer:
     return tuple(bbox)
 
   def render(self, rect: rl.Rectangle) -> None:
+    self._render_status_badge(rect)
     if not (ui_state.vision_object_overlay or ui_state.vision_object_debug_overlay):
       return
     if self.camera_view.stream_type != ROAD_STREAM:
@@ -76,3 +89,29 @@ class VisionObjectRenderer:
       if debug:
         label += f" #{int(obj.trackId)} {age_ms:.0f}ms"
       rl.draw_text_ex(self.font, label, rl.Vector2(screen.x, max(rect.y, screen.y - 32)), 28, 0, TEXT_COLOR)
+
+  def _render_status_badge(self, rect: rl.Rectangle) -> None:
+    sm = ui_state.sm
+    state = sm["visionObjectStateSP"]
+    process_running = any(p.name == "objectd" and p.running for p in sm["managerState"].processes)
+    badge = object_status_badge(StatusBadgeInput(
+      enabled=ui_state.vision_object_detection_enabled,
+      process_running=process_running,
+      service_alive=sm.alive["visionObjectStateSP"],
+      service_valid=sm.valid["visionObjectStateSP"],
+      state=str(state.state),
+      result_valid=bool(state.resultValid),
+      error_code=str(state.errorCode),
+      current_stream_road=self.camera_view.stream_type == ROAD_STREAM,
+      inference_frequency_hz=float(state.inferenceFrequencyHz),
+    ))
+    text_size = measure_text_cached(self.font, badge.text, BADGE_FONT_SIZE)
+    badge_width = text_size.x + 70
+    badge_rect = rl.Rectangle(rect.x + rect.width - badge_width - 245, rect.y + 48, badge_width, BADGE_HEIGHT)
+    rl.draw_rectangle_rounded(badge_rect, 0.45, 10, rl.Color(0, 0, 0, 205))
+    rl.draw_rectangle_rounded_lines_ex(badge_rect, 0.45, 10, 3, rl.Color(255, 255, 255, 70))
+    color = BADGE_COLORS[badge.level]
+    rl.draw_circle(int(badge_rect.x + 27), int(badge_rect.y + BADGE_HEIGHT / 2), 10, color)
+    rl.draw_text_ex(self.font, badge.text,
+                    rl.Vector2(badge_rect.x + 48, badge_rect.y + (BADGE_HEIGHT - text_size.y) / 2),
+                    BADGE_FONT_SIZE, 0, TEXT_COLOR)

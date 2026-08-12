@@ -59,6 +59,7 @@ class UIStateSP:
     self.custom_torque_params: bool = False
     self.torque_override_enabled: bool = False
     self.vision_object_overlay: bool = False
+    self.vision_object_detection_enabled: bool = False
     self.vision_object_distance_display: bool = False
     self.vision_object_debug_overlay: bool = False
     self._sp_initialized: bool = False
@@ -174,6 +175,7 @@ class UIStateSP:
     self.boot_offroad_mode = self.params.get("DeviceBootMode", return_default=True)
     self.always_offroad = self.params.get_bool("OffroadMode")
     self.vision_object_overlay = self.params.get_bool("VisionObjectOverlay")
+    self.vision_object_detection_enabled = self.params.get_bool("VisionObjectDetectionEnabled")
     self.vision_object_distance_display = self.params.get_bool("VisionObjectDistanceDisplay")
     self.vision_object_debug_overlay = self.params.get_bool("VisionObjectDebugOverlay")
 

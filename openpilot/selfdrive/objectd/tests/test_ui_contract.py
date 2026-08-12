@@ -2,7 +2,8 @@ import unittest
 
 from openpilot.selfdrive.objectd.constants import (DEGRADED_INFERENCE_HZ, MAX_RESULT_AGE_MS, MAX_UI_FRAME_DELTA,
                                                    NORMAL_INFERENCE_HZ, TRACK_MAX_PREDICTION_S)
-from openpilot.selfdrive.objectd.ui_contract import OverlayGateInput, map_normalized_bbox, should_render_overlay
+from openpilot.selfdrive.objectd.ui_contract import (OverlayGateInput, StatusBadgeInput, map_normalized_bbox,
+                                                     object_status_badge, should_render_overlay)
 
 
 def valid_input(**overrides):
@@ -40,6 +41,35 @@ class TestOverlayGate(unittest.TestCase):
     self.assertEqual(MAX_UI_FRAME_DELTA, 10)
     self.assertEqual(TRACK_MAX_PREDICTION_S, 0.5)
     self.assertFalse(should_render_overlay(valid_input(inference_frequency_hz=2.9)))
+
+
+class TestStatusBadge(unittest.TestCase):
+  def badge(self, **overrides):
+    values = {
+      "enabled": True, "process_running": True, "service_alive": True, "service_valid": True,
+      "state": "running", "result_valid": True, "error_code": "none", "current_stream_road": True,
+      "inference_frequency_hz": 3.0,
+    }
+    values.update(overrides)
+    return object_status_badge(StatusBadgeInput(**values))
+
+  def test_running_is_green_even_with_no_objects(self):
+    badge = self.badge()
+    self.assertEqual(badge.level, "running")
+    self.assertIn("3.0", badge.text)
+
+  def test_wide_explains_why_boxes_are_hidden(self):
+    badge = self.badge(current_stream_road=False)
+    self.assertEqual(badge.level, "wide")
+    self.assertIn("WIDE", badge.text)
+
+  def test_waiting_and_disabled_are_distinct(self):
+    self.assertEqual(self.badge(process_running=False, service_alive=False).level, "waiting")
+    self.assertEqual(self.badge(enabled=False, process_running=False, service_alive=False).level, "disabled")
+
+  def test_fused_is_error_and_stale_is_degraded(self):
+    self.assertEqual(self.badge(state="sessionFused", result_valid=False, error_code="circuitBreaker").level, "error")
+    self.assertEqual(self.badge(state="degraded", result_valid=False, error_code="stale").level, "degraded")
 
 
 class TestBboxMapping(unittest.TestCase):

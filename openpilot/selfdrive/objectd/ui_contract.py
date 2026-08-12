@@ -21,6 +21,42 @@ class OverlayGateInput:
   publish_age_ms: float
 
 
+@dataclass(frozen=True)
+class StatusBadgeInput:
+  enabled: bool
+  process_running: bool
+  service_alive: bool
+  service_valid: bool
+  state: str
+  result_valid: bool
+  error_code: str
+  current_stream_road: bool
+  inference_frequency_hz: float
+
+
+@dataclass(frozen=True)
+class StatusBadge:
+  level: str
+  text: str
+
+
+def object_status_badge(value: StatusBadgeInput) -> StatusBadge:
+  if not value.enabled:
+    return StatusBadge("disabled", "YOLO 已关闭")
+  if not value.process_running or not value.service_alive:
+    return StatusBadge("waiting", "YOLO 等待新驾驶会话")
+  if not value.service_valid or value.state == "sessionFused" or value.error_code == "circuitBreaker":
+    error = value.error_code if value.error_code != "none" else value.state
+    return StatusBadge("error", f"YOLO 错误 · {error}")
+  if not value.current_stream_road:
+    return StatusBadge("wide", "YOLO 运行中 · WIDE不显示框")
+  if (value.state != "running" or not value.result_valid or
+      value.inference_frequency_hz < NORMAL_INFERENCE_HZ or value.error_code != "none"):
+    reason = value.error_code if value.error_code != "none" else value.state
+    return StatusBadge("degraded", f"YOLO 降级 · {reason}")
+  return StatusBadge("running", f"YOLO 运行中 · {value.inference_frequency_hz:.1f}Hz")
+
+
 def should_render_overlay(value: OverlayGateInput) -> bool:
   if not value.current_stream_road or not value.message_stream_road:
     return False
