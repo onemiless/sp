@@ -14,6 +14,7 @@ from openpilot.common.transformations.camera import DEVICE_CAMERAS
 from openpilot.selfdrive.objectd.constants import (DEGRADED_INFERENCE_HZ, MAX_RESULT_AGE_MS,
                                                    NORMAL_INFERENCE_HZ, PUBLISH_HZ, SCHEMA_VERSION)
 from openpilot.selfdrive.objectd.geometry import estimate_camera_ground_distance
+from openpilot.selfdrive.objectd.lane_geometry import classify_lane_corridor
 from openpilot.selfdrive.objectd.model_runner import model_hash
 from openpilot.selfdrive.objectd.resource import ResourceGovernor, ResourceMode, ResourceSample, object_duration_sample
 from openpilot.selfdrive.objectd.stream_selector import ROAD_STREAM_NAME, select_object_stream
@@ -31,6 +32,7 @@ class CoarseCalibrationContext:
   rpy_calib: tuple[float, float, float]
   rpy_spread: tuple[float, float, float]
   camera_height_m: float
+  camera_from_device_euler: tuple[float, float, float] | None
 
 
 class WorkerController:
@@ -101,9 +103,6 @@ def _percentile(values: deque[float], percentile: float) -> float:
 
 def _coarse_calibration_context(sm, source_width: int, source_height: int,
                                 stream_name: str) -> CoarseCalibrationContext | None:
-  # WIDE boxes are supported, but WIDE distance geometry has not completed measured-distance validation.
-  if stream_name != ROAD_STREAM_NAME:
-    return None
   required = ("deviceState", "liveCalibration", "roadCameraState")
   if any(not sm.seen[name] or not sm.valid[name] or not sm.alive[name] for name in required):
     return None
@@ -114,21 +113,39 @@ def _coarse_calibration_context(sm, source_width: int, source_height: int,
     rpy_calib = tuple(float(value) for value in calibration.rpyCalib)
     rpy_spread = tuple(float(value) for value in calibration.rpyCalibSpread)
     camera_height = tuple(float(value) for value in calibration.height)
-    camera_config = DEVICE_CAMERAS[(str(sm["deviceState"].deviceType), str(sm["roadCameraState"].sensor))].fcam
+    camera_device = DEVICE_CAMERAS[(str(sm["deviceState"].deviceType), str(sm["roadCameraState"].sensor))]
+    camera_config = camera_device.fcam if stream_name == ROAD_STREAM_NAME else camera_device.ecam
+    camera_from_device_euler = (None if stream_name == ROAD_STREAM_NAME
+                                else tuple(float(value) for value in calibration.wideFromDeviceEuler))
   except (KeyError, TypeError, ValueError):
     return None
-  if len(rpy_calib) != 3 or len(rpy_spread) != 3 or len(camera_height) != 1:
+  if (len(rpy_calib) != 3 or len(rpy_spread) != 3 or len(camera_height) != 1 or
+      (camera_from_device_euler is not None and len(camera_from_device_euler) != 3)):
     return None
   if camera_config.size != (source_width, source_height):
     return None
-  values = (*rpy_calib, *rpy_spread, camera_height[0], *camera_config.intrinsics.flat)
+  values = (*rpy_calib, *rpy_spread, camera_height[0], *camera_config.intrinsics.flat,
+            *(camera_from_device_euler or ()))
   if not np.all(np.isfinite(values)):
     return None
-  return CoarseCalibrationContext(camera_config.intrinsics, rpy_calib, rpy_spread, camera_height[0])
+  return CoarseCalibrationContext(camera_config.intrinsics, rpy_calib, rpy_spread, camera_height[0],
+                                  camera_from_device_euler)
+
+
+def _lane_context(sm) -> tuple[list[tuple[tuple[float, ...], tuple[float, ...]]], tuple[float, ...]] | None:
+  if not sm.seen["modelV2"] or not sm.valid["modelV2"] or not sm.alive["modelV2"]:
+    return None
+  model = sm["modelV2"]
+  if len(model.laneLines) < 4 or len(model.laneLineProbs) < 4:
+    return None
+  lines = [(tuple(float(value) for value in model.laneLines[index].x),
+            tuple(float(value) for value in model.laneLines[index].y)) for index in range(4)]
+  return lines, tuple(float(model.laneLineProbs[index]) for index in range(4))
 
 
 def _object_payload(track: dict, source_size: tuple[int, int],
-                    calibration: CoarseCalibrationContext | None) -> dict:
+                    calibration: CoarseCalibrationContext | None,
+                    lane_context: tuple[list[tuple[tuple[float, ...], tuple[float, ...]]], tuple[float, ...]] | None) -> dict:
   bbox = [float(v) for v in track["bbox"]]
   velocity = [float(v) for v in track["velocity"]]
   contact = ((bbox[0] + bbox[2]) / 2.0, bbox[3])
@@ -138,12 +155,17 @@ def _object_payload(track: dict, source_size: tuple[int, int],
     contact_std = max(2.0 / source_size[1], 0.05 * (bbox[3] - bbox[1]))
     estimate = estimate_camera_ground_distance(contact, source_size, calibration.intrinsics,
                                                calibration.rpy_calib, calibration.rpy_spread,
-                                               calibration.camera_height_m, contact_std)
+                                               calibration.camera_height_m, contact_std,
+                                               calibration.camera_from_device_euler)
   distance_valid = bool(estimate is not None and estimate.valid)
   position = estimate.position if distance_valid else (0.0, 0.0, 0.0)
   distance = estimate.distance_m if distance_valid else 0.0
   distance_std = estimate.distance_std_m if distance_valid else 0.0
   range_band = "unknown" if not distance_valid else ("near" if distance < 10.0 else "medium" if distance < 20.0 else "far")
+  corridor_state = "unknown"
+  if distance_valid and lane_context is not None:
+    # Ground projection uses road convention (left positive); modelV2 lane y is right positive.
+    corridor_state = classify_lane_corridor((position[0], -position[1]), *lane_context)
   return {
     "trackId": int(track["track_id"]),
     "classId": int(track["class_id"]),
@@ -164,7 +186,7 @@ def _object_payload(track: dict, source_size: tuple[int, int],
     "rangeBand": range_band,
     "relativeSpeed": 0.0, "relativeSpeedValid": False,
     "ttc": 0.0, "ttcValid": False,
-    "corridorState": "unknown",
+    "corridorState": corridor_state,
   }
 
 
@@ -260,7 +282,8 @@ def main() -> None:
       source_size = ((int(last_result["source_width"]), int(last_result["source_height"])) if last_result else (0, 0))
       result_stream = str(last_result["stream_name"]) if last_result else desired_stream
       calibration = _coarse_calibration_context(sm, *source_size, result_stream) if result_valid else None
-      objects = ([_object_payload(obj, source_size, calibration) for obj in last_result["objects"]]
+      lane_context = _lane_context(sm)
+      objects = ([_object_payload(obj, source_size, calibration, lane_context) for obj in last_result["objects"]]
                  if (result_valid or debug_degraded_objects) else [])
       coarse_distance_available = bool(calibration is not None and any(obj["distanceValid"] for obj in objects))
 

@@ -95,3 +95,19 @@ def map_normalized_bbox(bbox: tuple[float, float, float, float], rect: tuple[flo
   y_offset = rect_y + (rect_height - frame_height) / 2.0 + translate_y * rect_height / 2.0
   return (x_offset + left * frame_width, y_offset + top * frame_height,
           (right - left) * frame_width, (bottom - top) * frame_height)
+
+
+def mapped_bbox_has_visible_corner(mapped: tuple[float, float, float, float],
+                                   rect: tuple[float, float, float, float]) -> bool:
+  x, y, width, height = mapped
+  rect_x, rect_y, rect_width, rect_height = rect
+  values = (*mapped, *rect)
+  if not all(math.isfinite(value) for value in values) or width <= 0.0 or height <= 0.0:
+    return False
+  return any(rect_x <= corner_x <= rect_x + rect_width and rect_y <= corner_y <= rect_y + rect_height
+             for corner_x in (x, x + width) for corner_y in (y, y + height))
+
+
+def should_render_object(class_id: int, corridor_state: str, debug: bool) -> bool:
+  # Keep all detections in objectd. Only suppress ego-lane cars/buses/trucks in the normal UI.
+  return debug or corridor_state != "inside" or class_id not in (2, 4, 5)

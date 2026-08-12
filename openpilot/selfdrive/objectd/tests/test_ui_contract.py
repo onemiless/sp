@@ -2,8 +2,9 @@ import unittest
 
 from openpilot.selfdrive.objectd.constants import (DEGRADED_INFERENCE_HZ, MAX_RESULT_AGE_MS, MAX_UI_FRAME_DELTA,
                                                    NORMAL_INFERENCE_HZ, TRACK_MAX_PREDICTION_S)
-from openpilot.selfdrive.objectd.ui_contract import (OverlayGateInput, StatusBadgeInput, map_normalized_bbox,
-                                                     object_status_badge, should_render_overlay)
+from openpilot.selfdrive.objectd.ui_contract import (OverlayGateInput, StatusBadgeInput, mapped_bbox_has_visible_corner,
+                                                     map_normalized_bbox, object_status_badge, should_render_object,
+                                                     should_render_overlay)
 
 
 def valid_input(**overrides):
@@ -97,6 +98,28 @@ class TestBboxMapping(unittest.TestCase):
 
   def test_invalid_bbox_rejected(self):
     self.assertIsNone(map_normalized_bbox((0.8, 0.1, 0.2, 0.5), (0.0, 0.0, 100.0, 100.0), (1.0, 1.0)))
+
+  def test_single_visible_horizontal_edge_is_suppressed(self):
+    rect = (0.0, 0.0, 2160.0, 1080.0)
+    mapped = map_normalized_bbox((0.05, 0.18, 0.95, 0.52), rect, (2.0, 2.0))
+    for actual, expected in zip(mapped, (-864.0, -151.2, 3888.0, 734.4), strict=True):
+      self.assertAlmostEqual(actual, expected)
+    self.assertFalse(mapped_bbox_has_visible_corner(mapped, rect))
+    self.assertTrue(mapped_bbox_has_visible_corner((100.0, -20.0, 500.0, 300.0), rect))
+
+
+class TestLaneDisplayPolicy(unittest.TestCase):
+  def test_current_lane_motor_vehicles_are_hidden(self):
+    for class_id in (2, 4, 5):
+      self.assertFalse(should_render_object(class_id, "inside", debug=False))
+
+  def test_vulnerable_road_users_and_uncertain_lanes_fail_open(self):
+    for class_id in (0, 1, 3):
+      self.assertTrue(should_render_object(class_id, "inside", debug=False))
+    self.assertTrue(should_render_object(2, "outside", debug=False))
+    self.assertTrue(should_render_object(2, "overlap", debug=False))
+    self.assertTrue(should_render_object(2, "unknown", debug=False))
+    self.assertTrue(should_render_object(2, "inside", debug=True))
 
 
 if __name__ == "__main__":

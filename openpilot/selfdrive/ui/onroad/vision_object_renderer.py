@@ -5,6 +5,7 @@ from msgq.visionipc import VisionStreamType
 
 from openpilot.selfdrive.objectd.constants import CLASS_NAMES, TRACK_MAX_PREDICTION_S
 from openpilot.selfdrive.objectd.ui_contract import (OverlayGateInput, StatusBadgeInput, object_status_badge,
+                                                     mapped_bbox_has_visible_corner, should_render_object,
                                                      should_render_overlay)
 from openpilot.selfdrive.ui.ui_state import ui_state
 from openpilot.system.ui.lib.application import FontWeight, gui_app
@@ -73,18 +74,23 @@ class VisionObjectRenderer:
     dt_s = min(age_ms / 1000.0, TRACK_MAX_PREDICTION_S)
     color = DEBUG_COLOR if debug and not state.resultValid else BOX_COLOR
     for obj in list(state.objects)[:32]:
+      class_id = int(obj.classId)
+      if not should_render_object(class_id, str(obj.corridorState), debug):
+        continue
       bbox = self._predicted_bbox(obj, dt_s)
       if bbox is None:
         continue
       screen = self.camera_view.normalized_bbox_to_screen(rect, bbox)
       if screen is None or screen.width < 2 or screen.height < 2:
         continue
+      if not mapped_bbox_has_visible_corner((screen.x, screen.y, screen.width, screen.height),
+                                            (rect.x, rect.y, rect.width, rect.height)):
+        continue
       rl.draw_rectangle_lines_ex(screen, 4.0, color)
-      class_id = int(obj.classId)
       class_name = CLASS_NAMES[class_id] if 0 <= class_id < len(CLASS_NAMES) else f"class-{class_id}"
       label = f"{class_name} {float(obj.confidence):.2f}"
       if ui_state.vision_object_distance_display and obj.distanceValid:
-        label += f" ~{float(obj.distance):.1f}m"
+        label += f" {float(obj.distance):.1f}m"
       if debug:
         label += f" #{int(obj.trackId)} {age_ms:.0f}ms"
       rl.draw_text_ex(self.font, label, rl.Vector2(screen.x, max(rect.y, screen.y - 32)), 28, 0, TEXT_COLOR)

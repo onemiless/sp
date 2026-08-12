@@ -26,9 +26,13 @@ The detector follows the camera displayed by the onroad UI: WIDE below 10 m/s an
 mode, with the same hysteresis as the UI. A stream change restarts the single worker and clears its tracker so boxes from
 one camera are never projected onto the other. The status badge reports the brief switching interval.
 
-When distance display is enabled on ROAD, objectd uses the live SP road-camera calibration (camera attitude, calibrated height,
-camera intrinsics) to intersect an unclipped detection-box ground contact with a locally flat road. Results are relative
-to the camera ground point, are limited to 5-30 m with at most 3 m estimated uncertainty, and are rendered with a `~`
-prefix in `coarse` mode. They are not front-bumper distances and are invalid whenever calibration or contact geometry is
-unavailable. This geometric estimate has no authority outside the display path and still requires measured-distance road
-validation. WIDE detections intentionally have no distance until their separate camera geometry is validated.
+When distance display is enabled, objectd uses the live SP calibration, the selected ROAD/WIDE camera intrinsics and the
+WIDE camera-to-device orientation to intersect an unclipped detection-box ground contact with a locally flat road. Raw
+computed results from 5-100 m are displayed to one decimal place. Estimated uncertainty remains recorded but does not hide
+the displayed result. Values are relative to the camera ground point, are not front-bumper distances, and remain invalid
+when calibration or contact geometry is unavailable. This geometric estimate has no authority outside the display path and
+still requires measured-distance road validation, especially for long-range WIDE results.
+
+SP's four model lane lines classify each ranged object as ego-lane, adjacent-lane, boundary overlap or unknown. The normal
+UI suppresses only ego-lane car, bus and truck boxes; person, bicycle and motorcycle boxes remain visible. Uncertain lane
+geometry fails open, and objectd continues publishing every detection regardless of UI filtering.

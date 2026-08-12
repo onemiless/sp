@@ -6,8 +6,9 @@ from pathlib import Path
 import numpy as np
 
 from openpilot.selfdrive.objectd.constants import DetectorThresholds
-from openpilot.selfdrive.objectd.geometry import (DistanceGateInput, DistanceInvalidReason, estimate_camera_ground_distance,
-                                                 gate_metric_distance, intersect_local_ground)
+from openpilot.selfdrive.objectd.geometry import (DistanceGateInput, DistanceInvalidReason, camera_view_from_road,
+                                                 estimate_camera_ground_distance, gate_metric_distance, intersect_local_ground)
+from openpilot.selfdrive.objectd.lane_geometry import classify_lane_corridor
 from openpilot.selfdrive.objectd.model_paths import object_model_root
 from openpilot.selfdrive.objectd.model_runner import model_artifact_available
 from openpilot.selfdrive.objectd.postprocess import Detection, decode_yolox, decode_yolox_grid
@@ -119,15 +120,42 @@ class TestDistanceGate(unittest.TestCase):
     np.testing.assert_allclose(result.position, expected[:3], atol=1e-6)
     self.assertAlmostEqual(result.distance_m, np.hypot(10.0, 2.0), places=5)
 
-    far = np.array([30.0, 0.0, 0.0, 1.0])
+    far = np.array([100.0, 0.0, 0.0, 1.0])
     projected_far = intrinsics @ (view_from_road @ far)
     far_contact = (projected_far[0] / projected_far[2] / width, projected_far[1] / projected_far[2] / height)
     far_result = estimate_camera_ground_distance(far_contact, (width, height), intrinsics, (0.0, 0.0, 0.0),
                                                 (0.0, 0.0, 0.0), 1.28, 1.0 / height)
     self.assertTrue(far_result.valid)
-    self.assertEqual(far_result.distance_m, 30.0)
+    self.assertAlmostEqual(far_result.distance_m, 100.0, places=5)
 
-  def test_coarse_distance_rejects_horizon_and_large_uncertainty(self):
+  def test_wide_camera_uses_its_own_orientation(self):
+    width, height = 1928, 1208
+    intrinsics = np.array([[567.0, 0.0, width / 2], [0.0, 567.0, height / 2], [0.0, 0.0, 1.0]])
+    wide_from_device = (0.0, -0.08, 0.04)
+    view_from_road = camera_view_from_road((0.0, 0.0, 0.0), 1.28, wide_from_device)
+    expected = np.array([40.0, -3.0, 0.0, 1.0])
+    projected = intrinsics @ (view_from_road @ expected)
+    contact = (projected[0] / projected[2] / width, projected[1] / projected[2] / height)
+
+    result = estimate_camera_ground_distance(contact, (width, height), intrinsics, (0.0, 0.0, 0.0),
+                                             (0.0, 0.0, 0.0), 1.28, 1.0 / height,
+                                             camera_from_device_euler=wide_from_device)
+    self.assertTrue(result.valid)
+    np.testing.assert_allclose(result.position, expected[:3], atol=1e-5)
+
+  def test_raw_distance_is_not_rejected_by_uncertainty(self):
+    width, height = 1928, 1208
+    intrinsics = np.array([[567.0, 0.0, width / 2], [0.0, 567.0, height / 2], [0.0, 0.0, 1.0]])
+    view_from_road = camera_view_from_road((0.0, 0.0, 0.0), 1.28)
+    expected = np.array([80.0, 0.0, 0.0, 1.0])
+    projected = intrinsics @ (view_from_road @ expected)
+    contact = (projected[0] / projected[2] / width, projected[1] / projected[2] / height)
+    result = estimate_camera_ground_distance(contact, (width, height), intrinsics, (0.0, 0.0, 0.0),
+                                             (0.0, 0.1, 0.0), 1.28, 0.02)
+    self.assertTrue(result.valid)
+    self.assertAlmostEqual(result.distance_m, 80.0, places=4)
+
+  def test_coarse_distance_rejects_horizon_but_records_uncertain_raw_result(self):
     intrinsics = np.array([[1000.0, 0.0, 500.0], [0.0, 1000.0, 300.0], [0.0, 0.0, 1.0]])
     horizon = estimate_camera_ground_distance((0.5, 0.5), (1000, 600), intrinsics,
                                               (0.0, 0.0, 0.0), (0.0, 0.0, 0.0), 1.2, 0.001)
@@ -135,7 +163,8 @@ class TestDistanceGate(unittest.TestCase):
 
     uncertain = estimate_camera_ground_distance((0.5, 0.54), (1000, 600), intrinsics,
                                                 (0.0, 0.0, 0.0), (0.0, 0.1, 0.0), 1.2, 0.02)
-    self.assertFalse(uncertain.valid)
+    self.assertTrue(uncertain.valid)
+    self.assertGreater(uncertain.distance_std_m, 3.0)
 
   def test_missing_extrinsics_fails_closed(self):
     result = gate_metric_distance(DistanceGateInput(result_age_ms=0.0))
@@ -174,6 +203,30 @@ class TestRoadPlane(unittest.TestCase):
     steep = np.column_stack((x, np.zeros_like(x), 0.03 * x))
     self.assertFalse(fit_road_plane([steep]).stable)
     self.assertFalse(fit_road_plane([steep, steep.copy()]).stable)
+
+
+class TestLaneGeometry(unittest.TestCase):
+  @staticmethod
+  def three_lane_lines():
+    x = np.array([0.0, 50.0, 100.0])
+    return [
+      (x, np.array([-5.4, -5.0, -4.5])),
+      (x, np.array([-1.8, -1.6, -1.4])),
+      (x, np.array([1.8, 2.0, 2.2])),
+      (x, np.array([5.4, 5.6, 5.8])),
+    ]
+
+  def test_current_and_adjacent_lane_assignment_follows_curves(self):
+    lines = self.three_lane_lines()
+    probs = [0.9, 0.9, 0.9, 0.9]
+    self.assertEqual(classify_lane_corridor((40.0, 0.0), lines, probs), "inside")
+    self.assertEqual(classify_lane_corridor((40.0, -3.5), lines, probs), "outside")
+    self.assertEqual(classify_lane_corridor((40.0, 3.5), lines, probs), "outside")
+    self.assertEqual(classify_lane_corridor((40.0, -1.7), lines, probs), "overlap")
+
+  def test_lane_assignment_fails_open_when_outer_lines_are_uncertain(self):
+    self.assertEqual(classify_lane_corridor((40.0, 3.5), self.three_lane_lines(), [0.2, 0.9, 0.9, 0.2]), "unknown")
+    self.assertEqual(classify_lane_corridor((110.0, 0.0), self.three_lane_lines(), [0.9] * 4), "unknown")
 
 
 class TestResourceGovernor(unittest.TestCase):
