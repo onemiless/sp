@@ -193,18 +193,18 @@ class TeslaSettings(BrandSettings):
     self.vision_object_detection_toggle = toggle_item_sp(
       title=tr("Vision Object Detection"),
       param="VisionObjectDetectionEnabled",
-      description=tr("Runs an experimental ROAD-camera object detector on C3X. Display only; never used for vehicle control."),
+      description=tr("Runs an experimental ROAD/WIDE camera object detector on C3X. Display only; never used for vehicle control."),
       enabled=ui_state.is_offroad,
     )
     self.vision_object_overlay_toggle = toggle_item_sp(
       title=tr("Vision Object Overlay"),
       param="VisionObjectOverlay",
-      description=tr("Draw detected public-model classes on the ROAD camera. The overlay is hidden immediately on WIDE camera."),
+      description=tr("Draw detected public-model classes on the current ROAD or WIDE camera."),
     )
     self.vision_object_distance_toggle = toggle_item_sp(
       title=tr("Approximate Object Distance"),
       param="VisionObjectDistanceDisplay",
-      description=tr("Shows only validated experimental monocular estimates. Invalid or unavailable estimates remain hidden."),
+      description=tr("Shows validated experimental ROAD-camera estimates. WIDE distance remains hidden until separately validated."),
     )
     self.vision_object_debug_toggle = toggle_item_sp(
       title=tr("Vision Object Debug Overlay"),

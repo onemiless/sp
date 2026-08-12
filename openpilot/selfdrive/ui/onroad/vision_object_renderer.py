@@ -17,7 +17,7 @@ DEBUG_COLOR = rl.Color(255, 190, 60, 220)
 TEXT_COLOR = rl.Color(255, 255, 255, 255)
 BADGE_COLORS = {
   "running": rl.Color(60, 210, 110, 255),
-  "wide": rl.Color(255, 196, 60, 255),
+  "switching": rl.Color(255, 196, 60, 255),
   "degraded": rl.Color(255, 140, 45, 255),
   "error": rl.Color(245, 65, 65, 255),
   "waiting": rl.Color(150, 160, 170, 255),
@@ -52,8 +52,6 @@ class VisionObjectRenderer:
     self._render_status_badge(rect)
     if not (ui_state.vision_object_overlay or ui_state.vision_object_debug_overlay):
       return
-    if self.camera_view.stream_type != ROAD_STREAM:
-      return
     sm = ui_state.sm
     state = sm["visionObjectStateSP"]
     debug = ui_state.vision_object_debug_overlay
@@ -65,7 +63,8 @@ class VisionObjectRenderer:
     age_ms = (current_timestamp - state.sourceTimestampEof) / 1e6
     publish_age_ms = state.resultAgeMs + max(0.0, (time.monotonic_ns() - state.publishMonoTime) / 1e6)
     if not should_render_overlay(OverlayGateInput(
-      True, str(state.streamType) == "road", sm.alive["visionObjectStateSP"], sm.valid["visionObjectStateSP"],
+      self.camera_view.stream_type in (VisionStreamType.VISION_STREAM_ROAD, VisionStreamType.VISION_STREAM_WIDE_ROAD),
+      self._stream_name() == str(state.streamType), sm.alive["visionObjectStateSP"], sm.valid["visionObjectStateSP"],
       str(state.state), bool(state.resultValid), debug, float(state.inferenceFrequencyHz), current_frame_id,
       int(state.sourceFrameId), current_timestamp, int(state.sourceTimestampEof), publish_age_ms,
     )):
@@ -102,7 +101,7 @@ class VisionObjectRenderer:
       state=str(state.state),
       result_valid=bool(state.resultValid),
       error_code=str(state.errorCode),
-      current_stream_road=self.camera_view.stream_type == ROAD_STREAM,
+      message_stream_matches=self._stream_name() == str(state.streamType),
       inference_frequency_hz=float(state.inferenceFrequencyHz),
     ))
     text_size = measure_text_cached(self.font, badge.text, BADGE_FONT_SIZE)
@@ -115,3 +114,6 @@ class VisionObjectRenderer:
     rl.draw_text_ex(self.font, badge.text,
                     rl.Vector2(badge_rect.x + 48, badge_rect.y + (BADGE_HEIGHT - text_size.y) / 2),
                     BADGE_FONT_SIZE, 0, TEXT_COLOR)
+
+  def _stream_name(self) -> str:
+    return "wide" if self.camera_view.stream_type == VisionStreamType.VISION_STREAM_WIDE_ROAD else "road"

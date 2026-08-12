@@ -6,8 +6,8 @@ from openpilot.selfdrive.objectd.constants import MAX_RESULT_AGE_MS, MAX_UI_FRAM
 
 @dataclass(frozen=True)
 class OverlayGateInput:
-  current_stream_road: bool
-  message_stream_road: bool
+  current_stream_supported: bool
+  message_stream_matches: bool
   service_alive: bool
   service_valid: bool
   state: str
@@ -30,7 +30,7 @@ class StatusBadgeInput:
   state: str
   result_valid: bool
   error_code: str
-  current_stream_road: bool
+  message_stream_matches: bool
   inference_frequency_hz: float
 
 
@@ -48,8 +48,8 @@ def object_status_badge(value: StatusBadgeInput) -> StatusBadge:
   if not value.service_valid or value.state == "sessionFused" or value.error_code == "circuitBreaker":
     error = value.error_code if value.error_code != "none" else value.state
     return StatusBadge("error", f"YOLO 错误 · {error}")
-  if not value.current_stream_road:
-    return StatusBadge("wide", "YOLO 运行中 · WIDE不显示框")
+  if not value.message_stream_matches:
+    return StatusBadge("switching", "YOLO 切换画面中")
   if (value.state != "running" or not value.result_valid or
       value.inference_frequency_hz < NORMAL_INFERENCE_HZ or value.error_code != "none"):
     reason = value.error_code if value.error_code != "none" else value.state
@@ -58,7 +58,7 @@ def object_status_badge(value: StatusBadgeInput) -> StatusBadge:
 
 
 def should_render_overlay(value: OverlayGateInput) -> bool:
-  if not value.current_stream_road or not value.message_stream_road:
+  if not value.current_stream_supported or not value.message_stream_matches:
     return False
   if not value.service_alive or not value.service_valid:
     return False

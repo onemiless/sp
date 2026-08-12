@@ -16,6 +16,7 @@ from openpilot.selfdrive.objectd.constants import (DEGRADED_INFERENCE_HZ, MAX_RE
 from openpilot.selfdrive.objectd.geometry import estimate_camera_ground_distance
 from openpilot.selfdrive.objectd.model_runner import model_hash
 from openpilot.selfdrive.objectd.resource import ResourceGovernor, ResourceMode, ResourceSample, object_duration_sample
+from openpilot.selfdrive.objectd.stream_selector import ROAD_STREAM_NAME, select_object_stream
 from openpilot.selfdrive.objectd.supervisor import RetryController, model_service_available, worker_timed_out
 from openpilot.selfdrive.objectd.worker import worker_main
 
@@ -40,14 +41,17 @@ class WorkerController:
     self.process = None
     self.last_heartbeat_s = 0.0
     self.received_message = False
+    self.stream_name = ROAD_STREAM_NAME
 
-  def start(self) -> None:
+  def start(self, stream_name: str = ROAD_STREAM_NAME) -> None:
     if self.process is not None:
       return
     # Queues are per-worker so a forced stop cannot leak a stale stop command or result into the replacement.
     self.output_queue = self.context.Queue(maxsize=2)
     self.control_queue = self.context.Queue(maxsize=2)
-    self.process = self.context.Process(target=worker_main, args=(self.output_queue, self.control_queue), daemon=True)
+    self.stream_name = stream_name
+    self.process = self.context.Process(target=worker_main,
+                                        args=(self.output_queue, self.control_queue, stream_name), daemon=True)
     self.process.start()
     self.last_heartbeat_s = time.monotonic()
     self.received_message = False
@@ -95,7 +99,11 @@ def _percentile(values: deque[float], percentile: float) -> float:
   return float(np.percentile(values, percentile)) if values else 0.0
 
 
-def _coarse_calibration_context(sm, source_width: int, source_height: int) -> CoarseCalibrationContext | None:
+def _coarse_calibration_context(sm, source_width: int, source_height: int,
+                                stream_name: str) -> CoarseCalibrationContext | None:
+  # WIDE boxes are supported, but WIDE distance geometry has not completed measured-distance validation.
+  if stream_name != ROAD_STREAM_NAME:
+    return None
   required = ("deviceState", "liveCalibration", "roadCameraState")
   if any(not sm.seen[name] or not sm.valid[name] or not sm.alive[name] for name in required):
     return None
@@ -161,9 +169,9 @@ def _object_payload(track: dict, source_size: tuple[int, int],
 
 
 def main() -> None:
-  cloudlog.warning("objectd supervisor init: ROAD-only, display-only")
+  cloudlog.warning("objectd supervisor init: display-stream following, display-only")
   pm = messaging.PubMaster(["visionObjectStateSP"])
-  sm = messaging.SubMaster(["deviceState", "liveCalibration", "modelV2", "roadCameraState"])
+  sm = messaging.SubMaster(["carState", "deviceState", "liveCalibration", "modelV2", "roadCameraState", "selfdriveState"])
   rk = Ratekeeper(PUBLISH_HZ, print_delay_threshold=None)
   worker = WorkerController()
   retry = RetryController()
@@ -173,7 +181,8 @@ def main() -> None:
   last_result = None
   error_code = "none"
   inference_updated = False
-  worker.start()
+  desired_stream = ROAD_STREAM_NAME
+  worker.start(desired_stream)
 
   try:
     while True:
@@ -181,6 +190,16 @@ def main() -> None:
       now_ns = time.monotonic_ns()
       sm.update(0)
       inference_updated = False
+
+      if sm.seen["carState"] and sm.seen["selfdriveState"]:
+        desired_stream = select_object_stream(desired_stream, bool(sm["selfdriveState"].experimentalMode),
+                                              float(sm["carState"].vEgo))
+      if worker.alive and worker.stream_name != desired_stream:
+        cloudlog.warning(f"objectd switching stream: {worker.stream_name} -> {desired_stream}")
+        worker.stop()
+        worker.start(desired_stream)
+        last_result = None
+        error_code = "none"
 
       for worker_message in worker.drain():
         if worker_message["kind"] == "result":
@@ -228,7 +247,7 @@ def main() -> None:
         elif not resource_sample.model_alive:
           error_code = "timeout"
       elif not worker.alive and retry.can_start(now_s):
-        worker.start()
+        worker.start(desired_stream)
       elif worker.alive:
         worker.set_frequency(NORMAL_INFERENCE_HZ if mode == ResourceMode.NORMAL else DEGRADED_INFERENCE_HZ)
 
@@ -239,7 +258,8 @@ def main() -> None:
         error_code = "stale"
       debug_degraded_objects = bool(last_result and mode == ResourceMode.DEGRADED and result_age_ms <= MAX_RESULT_AGE_MS)
       source_size = ((int(last_result["source_width"]), int(last_result["source_height"])) if last_result else (0, 0))
-      calibration = _coarse_calibration_context(sm, *source_size) if result_valid else None
+      result_stream = str(last_result["stream_name"]) if last_result else desired_stream
+      calibration = _coarse_calibration_context(sm, *source_size, result_stream) if result_valid else None
       objects = ([_object_payload(obj, source_size, calibration) for obj in last_result["objects"]]
                  if (result_valid or debug_degraded_objects) else [])
       coarse_distance_available = bool(calibration is not None and any(obj["distanceValid"] for obj in objects))
@@ -248,7 +268,7 @@ def main() -> None:
       state = msg.visionObjectStateSP
       state.schemaVersion = SCHEMA_VERSION
       state.state = "sessionFused" if retry.fused else ("running" if result_valid else "degraded")
-      state.streamType = "road"
+      state.streamType = result_stream
       state.sourceWidth = int(last_result["source_width"]) if last_result else 0
       state.sourceHeight = int(last_result["source_height"]) if last_result else 0
       state.sourceFrameId = int(last_result["source_frame_id"]) if last_result else 0

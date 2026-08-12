@@ -8,7 +8,7 @@ from openpilot.selfdrive.objectd.ui_contract import (OverlayGateInput, StatusBad
 
 def valid_input(**overrides):
   values = {
-    "current_stream_road": True, "message_stream_road": True, "service_alive": True, "service_valid": True,
+    "current_stream_supported": True, "message_stream_matches": True, "service_alive": True, "service_valid": True,
     "state": "running", "result_valid": True, "debug": False, "inference_frequency_hz": 3.0,
     "current_frame_id": 105, "source_frame_id": 100, "current_timestamp_eof": 1_200_000_000,
     "source_timestamp_eof": 1_000_000_000, "publish_age_ms": 220.0,
@@ -21,9 +21,9 @@ class TestOverlayGate(unittest.TestCase):
   def test_valid_road_message(self):
     self.assertTrue(should_render_overlay(valid_input()))
 
-  def test_wide_always_hidden(self):
-    self.assertFalse(should_render_overlay(valid_input(current_stream_road=False)))
-    self.assertFalse(should_render_overlay(valid_input(message_stream_road=False)))
+  def test_unsupported_or_mismatched_stream_hidden(self):
+    self.assertFalse(should_render_overlay(valid_input(current_stream_supported=False)))
+    self.assertFalse(should_render_overlay(valid_input(message_stream_matches=False)))
 
   def test_stale_or_future_frame_hidden(self):
     self.assertFalse(should_render_overlay(valid_input(publish_age_ms=501.0)))
@@ -47,7 +47,7 @@ class TestStatusBadge(unittest.TestCase):
   def badge(self, **overrides):
     values = {
       "enabled": True, "process_running": True, "service_alive": True, "service_valid": True,
-      "state": "running", "result_valid": True, "error_code": "none", "current_stream_road": True,
+      "state": "running", "result_valid": True, "error_code": "none", "message_stream_matches": True,
       "inference_frequency_hz": 3.0,
     }
     values.update(overrides)
@@ -58,10 +58,10 @@ class TestStatusBadge(unittest.TestCase):
     self.assertEqual(badge.level, "running")
     self.assertIn("3.0", badge.text)
 
-  def test_wide_explains_why_boxes_are_hidden(self):
-    badge = self.badge(current_stream_road=False)
-    self.assertEqual(badge.level, "wide")
-    self.assertIn("WIDE", badge.text)
+  def test_stream_switch_explains_temporary_hidden_boxes(self):
+    badge = self.badge(message_stream_matches=False)
+    self.assertEqual(badge.level, "switching")
+    self.assertIn("切换", badge.text)
 
   def test_waiting_and_disabled_are_distinct(self):
     self.assertEqual(self.badge(process_running=False, service_alive=False).level, "waiting")

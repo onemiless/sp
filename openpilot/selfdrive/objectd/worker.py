@@ -14,7 +14,9 @@ from openpilot.selfdrive.objectd.tracker import ShortTermTracker
 
 
 ROAD_STREAM = VisionStreamType.VISION_STREAM_ROAD
+WIDE_STREAM = VisionStreamType.VISION_STREAM_WIDE_ROAD
 STREAM_CONNECT_TIMEOUT_S = 5.0
+STREAM_TYPES = {"road": ROAD_STREAM, "wide": WIDE_STREAM}
 
 
 def _put_latest(output_queue, message: dict) -> None:
@@ -28,7 +30,7 @@ def _put_latest(output_queue, message: dict) -> None:
     output_queue.put_nowait(message)
 
 
-def worker_main(output_queue, control_queue) -> None:
+def worker_main(output_queue, control_queue, stream_name: str = "road") -> None:
   try:
     runner = ObjectModelRunner()
   except Exception as exc:
@@ -36,7 +38,10 @@ def worker_main(output_queue, control_queue) -> None:
     return
 
   tracker = ShortTermTracker()
-  client = VisionIpcClient("camerad", ROAD_STREAM, conflate=True)
+  if stream_name not in STREAM_TYPES:
+    _put_latest(output_queue, {"kind": "error", "error": "streamMismatch", "detail": f"invalid stream {stream_name}"})
+    return
+  client = VisionIpcClient("camerad", STREAM_TYPES[stream_name], conflate=True)
   connect_started_s = time.monotonic()
   while not client.connect(False):
     now_s = time.monotonic()
@@ -47,7 +52,7 @@ def worker_main(output_queue, control_queue) -> None:
       pass
     if stream_connect_timed_out(connect_started_s, now_s, STREAM_CONNECT_TIMEOUT_S):
       _put_latest(output_queue, {"kind": "error", "error": "streamMismatch",
-                                 "detail": "ROAD VisionIPC unavailable", "mono_time": now_s})
+                                 "detail": f"{stream_name.upper()} VisionIPC unavailable", "mono_time": now_s})
       return
     _put_latest(output_queue, {"kind": "heartbeat", "mono_time": now_s})
     time.sleep(0.1)
@@ -93,6 +98,7 @@ def worker_main(output_queue, control_queue) -> None:
       duration_ms = (time.perf_counter() - started) * 1000.0
       _put_latest(output_queue, {
         "kind": "result",
+        "stream_name": stream_name,
         "warmup": inference_count == 0,
         "source_width": int(frame.width),
         "source_height": int(frame.height),
