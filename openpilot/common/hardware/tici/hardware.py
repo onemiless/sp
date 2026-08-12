@@ -15,91 +15,11 @@ from openpilot.common.hardware.base import HardwareBase, ThermalConfig, ThermalZ
 from openpilot.common.esim.lpa import TiciLPA
 from openpilot.common.hardware.tici.pins import GPIO
 from openpilot.common.hardware.tici.amplifier import Amplifier
-from openpilot.system.hardware.offline_wake import (
-  current_host_session, offline_wake_debug_log as _offline_wake_debug_log, panda_bootkick_test_pending,
-  panda_wake_monitor_acknowledged, panda_wake_monitor_health_ready, panda_wake_monitor_status_ready,
-  PANDA_WAKE_MONITOR_COMMITTED_STATE,
-  PANDA_WAKE_MONITOR_STATUS_FLAG_CAN_HEALTHY, PANDA_WAKE_MONITOR_STATUS_FLAG_PREPARE_DIRTY,
-  PANDA_WAKE_MONITOR_STATUS_FLAG_RX_ARMED,
-)
 
 MODEM_STATE_PATH = "/dev/shm/modem"
 
 NetworkType = log.DeviceState.NetworkType
 NetworkStrength = log.DeviceState.NetworkStrength
-
-
-def offline_wake_debug_log(message: str) -> None:
-  _offline_wake_debug_log("tici.hardware", message)
-
-
-def wake_monitor_kmsg(message: str) -> None:
-  try:
-    with open("/dev/kmsg", "w") as f:
-      f.write(f"<3>[wake-monitor] {message}\n")
-  except Exception:
-    pass
-
-
-def request_internal_panda_wake_monitor() -> bool:
-  if panda_bootkick_test_pending():
-    offline_wake_debug_log("bootkick test pending; skipping Panda.enable_deepsleep before shutdown")
-    wake_monitor_kmsg("Tici.shutdown skipped panda wake monitor for bootkick test")
-    return True
-
-  cloudlog = None
-  offline_wake_debug_log("request_internal_panda_wake_monitor start")
-  try:
-    from openpilot.common.params import Params
-    from openpilot.common.swaglog import cloudlog
-    from panda import Panda
-
-    params = Params()
-    transaction_string = params.get("PandaWakeMonitorTxn")
-    if not isinstance(transaction_string, str) or len(transaction_string) != 8:
-      offline_wake_debug_log(f"missing or invalid PandaWakeMonitorTxn value={transaction_string!r}")
-      return False
-    transaction = int(transaction_string, 16)
-    if transaction == 0 or not panda_wake_monitor_acknowledged(params, transaction):
-      offline_wake_debug_log(f"missing or stale PandaWakeMonitorAck transaction={transaction_string}")
-      return False
-
-    serials = Panda.list()
-    offline_wake_debug_log(f"Panda.list returned {serials}")
-    for serial in serials:
-      with Panda(serial, disable_checks=False) as panda:
-        is_internal = panda.is_internal()
-        offline_wake_debug_log(f"opened panda serial={serial} internal={is_internal}")
-        if is_internal:
-          panda.set_host_session(current_host_session())
-          health = panda.health()
-          can_health = [panda.can_health(bus) for bus in (0, 1, 2)]
-          if not panda_wake_monitor_health_ready(health, can_health):
-            offline_wake_debug_log(f"refusing wake monitor commit with unhealthy Panda health={health} can_health={can_health}")
-            wake_monitor_kmsg(f"Tici.shutdown refused unhealthy panda wake monitor serial={serial}")
-            continue
-          status = panda.commit_wake_monitor(transaction)
-          offline_wake_debug_log(f"commit health={health} transaction={transaction_string} status={status}")
-          if not panda_wake_monitor_status_ready(
-            status, transaction, PANDA_WAKE_MONITOR_COMMITTED_STATE,
-            required_flags=PANDA_WAKE_MONITOR_STATUS_FLAG_RX_ARMED | PANDA_WAKE_MONITOR_STATUS_FLAG_CAN_HEALTHY,
-            forbidden_flags=PANDA_WAKE_MONITOR_STATUS_FLAG_PREPARE_DIRTY,
-          ):
-            offline_wake_debug_log(f"Panda.commit_wake_monitor unconfirmed serial={serial} transaction={transaction_string} status={status}")
-            wake_monitor_kmsg(f"Tici.shutdown failed to confirm panda wake monitor commit serial={serial}")
-            continue
-          cloudlog.warning(f"committed internal panda wake monitor before shutdown serial={serial} transaction={transaction_string}")
-          offline_wake_debug_log(f"Panda.commit_wake_monitor confirmed serial={serial} transaction={transaction_string}")
-          wake_monitor_kmsg(f"Tici.shutdown committed panda wake monitor serial={serial}")
-          return True
-    offline_wake_debug_log("found no internal panda")
-    wake_monitor_kmsg("Tici.shutdown found no internal panda")
-  except Exception as e:
-    if cloudlog is not None:
-      cloudlog.exception("failed to request internal panda wake monitor before shutdown")
-    offline_wake_debug_log(f"failed to request panda wake monitor: {type(e).__name__}: {e}")
-    wake_monitor_kmsg(f"Tici.shutdown failed to request panda wake monitor: {type(e).__name__}: {e}")
-  return False
 
 
 def affine_irq(val, action):
@@ -326,20 +246,6 @@ class Tici(HardwareBase):
     return (self.read_param_file("/sys/class/power_supply/bms/voltage_now", int) * self.read_param_file("/sys/class/power_supply/bms/current_now", int) / 1e12)
 
   def shutdown(self):
-    offline_wake_debug_log("Tici.shutdown start")
-    monitor_ready = request_internal_panda_wake_monitor()
-    if not monitor_ready:
-      from openpilot.common.params import Params
-      if not Params().get_bool("ForcePowerDown"):
-        offline_wake_debug_log("Tici.shutdown refused unmonitored poweroff; rebooting to recover manager")
-        wake_monitor_kmsg("Tici.shutdown refused unmonitored poweroff; rebooting to recover manager")
-        os.sync()
-        subprocess.run("sudo reboot", shell=True)
-        return
-      offline_wake_debug_log("Tici.shutdown force override proceeding without a confirmed panda wake monitor")
-      wake_monitor_kmsg("Tici.shutdown force override proceeding without a confirmed panda wake monitor")
-    os.sync()
-    offline_wake_debug_log("os.sync complete; running sudo poweroff")
     subprocess.run("sudo poweroff", shell=True)
 
   def get_thermal_config(self):

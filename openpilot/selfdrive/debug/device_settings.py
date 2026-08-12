@@ -124,7 +124,6 @@ EXTRA_SETTINGS: tuple[dict[str, Any], ...] = (
   {"key": "TeslaMadsScreenButton", "widget": "toggle", "title": "Tesla MADS 屏幕按钮", "group": "Tesla", "offroad_only": True},
   {"key": "TeslaTouchLongitudinalSwitch", "widget": "toggle", "title": "4指触摸切换原车ACC", "group": "Tesla", "offroad_only": True},
   {"key": "TeslaTurnSignalValidation", "widget": "toggle", "title": "启用 Tesla 转向 CAN 测试", "category": "Developer", "group": "Tesla 测试", "offroad_only": True},
-  {"key": "TeslaOfflineWakeCaptureEnabled", "widget": "toggle", "title": "离线唤醒诊断记录", "group": "Tesla", "offroad_only": True},
   {"key": "MpcTuningPreset", "widget": "multiple_button", "title": "纵向 MPC 预设", "group": "纵向 MPC", "options": [{"value": 0, "label": "Moumou"}, {"value": 1, "label": "当前"}, {"value": 2, "label": "自定义"}], "offroad_only": False},
 )
 

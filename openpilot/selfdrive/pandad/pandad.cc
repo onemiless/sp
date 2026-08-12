@@ -5,10 +5,7 @@
 #include <bitset>
 #include <cassert>
 #include <cerrno>
-#include <ctime>
-#include <fstream>
 #include <memory>
-#include <stdexcept>
 #include <thread>
 #include <utility>
 
@@ -35,27 +32,6 @@ struct HwmonState {
 
 HwmonState hwmon_state;
 
-uint32_t current_host_session() {
-  const std::string boot_id = util::read_file("/proc/sys/kernel/random/boot_id");
-  uint32_t hash = 2166136261U;
-  for (const unsigned char c : boot_id) {
-    hash = (hash ^ c) * 16777619U;
-  }
-  return hash != 0U ? hash : 1U;
-}
-
-void offline_wake_debug_log(const std::string &message) {
-  std::ofstream log("/data/offline_wake_debug.log", std::ios::app);
-  if (!log.is_open()) {
-    return;
-  }
-
-  std::time_t now = std::time(nullptr);
-  char ts[32] = {};
-  std::strftime(ts, sizeof(ts), "%Y-%m-%d %H:%M:%S", std::localtime(&now));
-  log << ts << " pandad " << message << "\n";
-}
-
 bool check_connected(Panda *panda) {
   if (!panda->connected()) {
     do_exit = true;
@@ -81,8 +57,6 @@ Panda *connect(std::string serial) {
   if (getenv("BOARDD_LOOPBACK")) {
     panda->set_loopback(true);
   }
-  //panda->enable_deepsleep();
-
   for (int i = 0; i < PANDA_CAN_CNT; i++) {
     panda->set_can_fd_auto(i, true);
   }
@@ -229,7 +203,6 @@ void fill_panda_can_state(cereal::PandaState::PandaCanState::Builder &cs, const 
 }
 
 std::optional<bool> send_panda_states(PubMaster *pm, Panda *panda, bool is_onroad, bool spoofing_started, bool always_offroad) {
-  static Params params;
   // build msg
   MessageBuilder msg;
   auto evt = msg.initEvent();
@@ -262,8 +235,7 @@ std::optional<bool> send_panda_states(PubMaster *pm, Panda *panda, bool is_onroa
     panda->set_safety_model(cereal::CarParams::SafetyModel::NO_OUTPUT);
   }
 
-  const bool wake_monitor_observe = params.getBool("PandaWakeMonitorObserve");
-  bool power_save_desired = !ignition_local && !wake_monitor_observe;
+  bool power_save_desired = !ignition_local;
   if (health.power_save_enabled_pkt != power_save_desired) {
     panda->set_power_saving(power_save_desired);
   }
@@ -353,65 +325,6 @@ void process_panda_state(Panda *panda, PubMaster *pm, bool engaged, bool engaged
   panda->send_heartbeat(engaged, engaged_mads);
 }
 
-void process_wake_monitor_request(Panda *panda) {
-  static Params params;
-
-  if (!params.getBool("PandaWakeMonitorRequest")) {
-    return;
-  }
-
-  offline_wake_debug_log("PandaWakeMonitorRequest received");
-  params.remove("PandaWakeMonitorRequest");
-  const std::string transaction_string = params.get("PandaWakeMonitorTxn");
-  uint32_t transaction = 0U;
-  try {
-    if (transaction_string.size() != 8U) {
-      throw std::invalid_argument("wake transaction must contain eight hexadecimal digits");
-    }
-    transaction = static_cast<uint32_t>(std::stoul(transaction_string, nullptr, 16));
-  } catch (const std::exception &e) {
-    params.remove("PandaWakeMonitorAck");
-    offline_wake_debug_log(util::string_format("invalid wake transaction: %s", e.what()));
-    return;
-  }
-  auto health = panda->get_state();
-  if (!health || health->faults_pkt != 0U || health->rx_buffer_overflow_pkt != 0U) {
-    params.remove("PandaWakeMonitorAck");
-    const uint32_t faults = health ? health->faults_pkt : UINT32_MAX;
-    offline_wake_debug_log(util::string_format("prepare refused unhealthy Panda faults=%08x", faults));
-    return;
-  }
-  offline_wake_debug_log(util::string_format("pre-enable health harness=%u ignition_line=%u ignition_can=%u sbu1=%u sbu2=%u som_reset=%u",
-                                             health->car_harness_status_pkt, health->ignition_line_pkt, health->ignition_can_pkt,
-                                             health->sbu1_voltage_mV, health->sbu2_voltage_mV, health->som_reset_triggered));
-  for (uint32_t bus = 0U; bus < PANDA_CAN_CNT; bus++) {
-    auto can_health = panda->get_can_state(bus);
-    if (!can_health || can_health->bus_off != 0U || can_health->error_passive != 0U ||
-        can_health->total_rx_lost_cnt != 0U) {
-      params.remove("PandaWakeMonitorAck");
-      offline_wake_debug_log(util::string_format("prepare refused unhealthy FDCAN bus=%u", bus));
-      return;
-    }
-  }
-  auto status = panda->prepare_wake_monitor(transaction);
-  const uint8_t required_flags = WAKE_MONITOR_STATUS_FLAG_RX_ARMED | WAKE_MONITOR_STATUS_FLAG_CAN_HEALTHY;
-  if (!status || status->magic != WAKE_MONITOR_STATUS_MAGIC ||
-      status->state != WAKE_MONITOR_STATE_PREPARED || status->transaction != transaction ||
-      (status->reserved & required_flags) != required_flags ||
-      (status->reserved & WAKE_MONITOR_STATUS_FLAG_PREPARE_DIRTY) != 0U) {
-    const uint32_t magic = status ? status->magic : 0U;
-    const uint32_t state = status ? status->state : 0U;
-    params.remove("PandaWakeMonitorAck");
-    offline_wake_debug_log(util::string_format("prepare unconfirmed transaction=%08x magic=%u state=%u", transaction, magic, state));
-    LOGE("failed to prepare panda wake monitor: transaction=0x%08x magic=0x%08x state=%u", transaction, magic, state);
-    return;
-  }
-  params.put("PandaWakeMonitorAck", transaction_string);
-  offline_wake_debug_log(util::string_format("prepare confirmed transaction=%08x host_session=%08x; PandaWakeMonitorAck set",
-                                             transaction, status->host_session));
-  LOGW("prepared panda wake monitor transaction=0x%08x before shutdown", transaction);
-}
-
 void process_peripheral_state(Panda *panda, PubMaster *pm, bool no_fan_control, bool is_onroad) {
   static Params params;
   static SubMaster sm({"deviceState", "driverCameraState"});
@@ -498,20 +411,6 @@ void pandad_run(Panda *panda) {
   const bool spoofing_started = getenv("STARTED") != nullptr;
   const bool fake_send = getenv("FAKESEND") != nullptr;
 
-  const uint32_t host_session = current_host_session();
-  panda->set_host_session(host_session);
-  if (auto status = panda->get_wake_monitor_status()) {
-    const bool stale_prepared = status->state == WAKE_MONITOR_STATE_PREPARED;
-    const bool unfinished_same_session = (status->committed_host_session == host_session) &&
-                                         (status->state >= WAKE_MONITOR_STATE_COMMITTED) &&
-                                         (status->state <= WAKE_MONITOR_STATE_FAILED);
-    if ((status->transaction != 0U) && (stale_prepared || unfinished_same_session)) {
-      offline_wake_debug_log(util::string_format("aborting stale transaction=%08x state=%u",
-                                                 status->transaction, status->state));
-      panda->abort_wake_monitor(status->transaction);
-    }
-  }
-
   // Start helper threads for event-driven sendcan and slow non-Panda reads.
   std::thread send_thread(can_send_thread, panda, fake_send);
   std::thread hardware_thread(hwmon_thread);
@@ -531,7 +430,6 @@ void pandad_run(Panda *panda) {
 
     // Process peripheral state at 20 Hz
     if (rk.frame() % 5 == 0) {
-      process_wake_monitor_request(panda);
       process_peripheral_state(panda, &pm, no_fan_control, is_onroad);
     }
 

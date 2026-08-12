@@ -229,7 +229,6 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"TeslaAutoSpeedLimit", {PERSISTENT | BACKUP, BOOL, "0"}},
     {"TeslaCanValidationLogging", {PERSISTENT | BACKUP, BOOL, "0"}},
     {"TeslaDynamicApLongitudinal", {PERSISTENT | BACKUP, BOOL, "0"}},
-    {"TeslaOfflineWakeCaptureEnabled", {PERSISTENT, BOOL, "0"}},
     {"TeslaSpeedButtonValidation", {PERSISTENT | BACKUP, BOOL, "0"}},
     {"TeslaStockLongitudinal", {CLEAR_ON_MANAGER_START, BOOL}},
     {"TeslaTurnSignalTestCancel", {CLEAR_ON_MANAGER_START | CLEAR_ON_OFFROAD_TRANSITION, JSON}},
@@ -285,15 +284,9 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"SpeedLimitOffsetMaxSpeed", {PERSISTENT | BACKUP, INT, "0"}},
     {"StopLineDeceleration", {PERSISTENT | BACKUP, INT, "5"}},  // tenths of m/s^2
 
-    // Offline wake / panda
-    {"AutoWakeTestEnabled", {PERSISTENT, BOOL}},
+    // Panda / device startup
     {"GpsTimeSyncDone", {CLEAR_ON_MANAGER_START, BOOL}},
     {"PandaSignatures", {CLEAR_ON_MANAGER_START, BYTES}},
-    {"PandaSomResetTriggered", {CLEAR_ON_MANAGER_START | CLEAR_ON_OFFROAD_TRANSITION, BOOL}},
-    {"PandaWakeMonitorAck", {CLEAR_ON_MANAGER_START | CLEAR_ON_OFFROAD_TRANSITION, STRING}},
-    {"PandaWakeMonitorObserve", {CLEAR_ON_MANAGER_START | CLEAR_ON_OFFROAD_TRANSITION, BOOL}},
-    {"PandaWakeMonitorRequest", {CLEAR_ON_MANAGER_START | CLEAR_ON_OFFROAD_TRANSITION, BOOL}},
-    {"PandaWakeMonitorTxn", {CLEAR_ON_MANAGER_START | CLEAR_ON_OFFROAD_TRANSITION, STRING}},
 
     // Web / misc
     {"DisableRouteRecording", {PERSISTENT | BACKUP, BOOL, "0"}},

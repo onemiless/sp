@@ -11,108 +11,8 @@ from openpilot.common.basedir import BASEDIR
 from openpilot.common.params import Params
 from openpilot.common.hardware import HARDWARE
 from openpilot.common.swaglog import cloudlog
-from openpilot.system.hardware.offline_wake import (
-  clear_panda_bootkick_test_sentinel, offline_wake_debug_log as _offline_wake_debug_log,
-  offline_wake_debug_log_lines, PANDA_WAKE_MONITOR_COMMITTED_STATE, PANDA_WAKE_MONITOR_FAILED_STATE,
-)
 
 from openpilot.sunnypilot.selfdrive.pandad.rivian_long_flasher import flash_rivian_long
-
-
-def offline_wake_debug_log(message: str) -> None:
-  _offline_wake_debug_log("pandad.py", message)
-
-
-PANDA_WAKE_JOURNAL_CURSOR = "/data/offline_wake_journal_cursor"
-PANDA_WAKE_JOURNAL_PRE_HEARTBEAT_MAX_RECORDS = 8
-PANDA_WAKE_JOURNAL_TIMEOUT_MS = 250
-
-
-def panda_has_active_wake_transaction() -> bool:
-  """Preserve Panda RAM until native pandad can attribute the new host session."""
-  try:
-    for serial in Panda.list():
-      with Panda(serial, disable_checks=False) as panda:
-        if not panda.is_internal():
-          continue
-        status = panda.wake_monitor_status()
-        active = status.get("magic") == Panda.WAKE_MONITOR_STATUS_MAGIC and status.get("transaction", 0) != 0 \
-          and PANDA_WAKE_MONITOR_COMMITTED_STATE <= status.get("state", 0) <= PANDA_WAKE_MONITOR_FAILED_STATE
-        offline_wake_debug_log(f"pre-reset wake transaction serial={serial} active={active} status={status}")
-        if active:
-          return True
-  except Exception as e:
-    # Old firmware has no transaction status request. Preserve the established
-    # reset/flash path so it can be upgraded normally.
-    offline_wake_debug_log(f"pre-reset wake transaction unavailable: {type(e).__name__}: {e}")
-  return False
-
-
-def _read_wake_journal_cursor(serial: str) -> int:
-  try:
-    with open(PANDA_WAKE_JOURNAL_CURSOR) as f:
-      stored_serial, slot = f.read().strip().split()
-    return int(slot) if stored_serial == serial else 0
-  except (FileNotFoundError, OSError, ValueError):
-    return 0
-
-
-def _write_wake_journal_cursor(serial: str, slot: int) -> None:
-  temporary = f"{PANDA_WAKE_JOURNAL_CURSOR}.tmp"
-  with open(temporary, "w") as f:
-    f.write(f"{serial} {slot}\n")
-    f.flush()
-    os.fsync(f.fileno())
-  os.replace(temporary, PANDA_WAKE_JOURNAL_CURSOR)
-  parent = os.path.dirname(PANDA_WAKE_JOURNAL_CURSOR) or "."
-  directory_fd = os.open(parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
-  try:
-    os.fsync(directory_fd)
-  finally:
-    os.close(directory_fd)
-
-
-def export_wake_journal(panda: Panda, serial: str) -> None:
-  try:
-    info = panda.wake_journal_info(timeout=PANDA_WAKE_JOURNAL_TIMEOUT_MS)
-    if info["magic"] != Panda.WAKE_JOURNAL_MAGIC or info["version"] != Panda.WAKE_JOURNAL_VERSION \
-        or info["record_size"] != Panda.WAKE_JOURNAL_RECORD_STRUCT.size:
-      raise ValueError(f"unsupported wake journal info {info}")
-    used_slots = min(info["used_slots"], info["capacity"])
-    cursor = _read_wake_journal_cursor(serial)
-    if cursor > used_slots:
-      cursor = 0
-
-    messages = [f"wake journal info serial={serial} info={info} export_from={cursor}"]
-    first_slot = max(cursor, used_slots - PANDA_WAKE_JOURNAL_PRE_HEARTBEAT_MAX_RECORDS)
-    if first_slot != cursor:
-      messages.append(f"wake journal pre-heartbeat export bounded skipped_slots={first_slot - cursor}")
-    for slot in range(first_slot, used_slots):
-      record = panda.wake_journal_record(slot, timeout=PANDA_WAKE_JOURNAL_TIMEOUT_MS)
-      messages.append(f"wake journal slot={slot} record={record}")
-    if not offline_wake_debug_log_lines("pandad.py", messages):
-      raise OSError("failed to fsync wake journal export")
-    _write_wake_journal_cursor(serial, used_slots)
-  except Exception as e:
-    # Older firmware does not implement the journal requests. Preserve startup
-    # and the existing RTC diagnostics while making that limitation explicit.
-    offline_wake_debug_log(f"wake journal unavailable serial={serial}: {type(e).__name__}: {e}")
-
-
-def log_offline_wake_state(panda: Panda, serial: str) -> None:
-  try:
-    wake_success = panda.wake_success()
-    wake_debug = panda.wake_debug()
-    wake_can_trace = panda.wake_can_trace()
-    health = panda.health()
-    message = f"panda offline wake state sample=pre_heartbeat serial={serial} wake_success={wake_success} wake_debug={wake_debug}"
-    message += f" wake_can_trace={wake_can_trace} health={health}"
-    offline_wake_debug_log(message)
-    export_wake_journal(panda, serial)
-    if clear_panda_bootkick_test_sentinel():
-      offline_wake_debug_log("cleared panda bootkick test sentinel after startup wake-state read")
-  except Exception as e:
-    offline_wake_debug_log(f"failed to read panda wake state serial={serial}: {type(e).__name__}: {e}")
 
 
 def get_expected_signature() -> bytes:
@@ -161,7 +61,6 @@ def flash_panda(panda_serial: str):
     cloudlog.info("Version mismatch after flashing, exiting")
     raise AssertionError
 
-  log_offline_wake_state(panda, panda_serial)
   panda.close()
 
 
@@ -209,7 +108,7 @@ def main() -> None:
   while not do_exit:
     try:
       cloudlog.event("pandad.flash_and_connect", count=count)
-      if count == 0 and not panda_has_active_wake_transaction():
+      if count == 0:
         HARDWARE.reset_internal_panda()
       count += 1
 

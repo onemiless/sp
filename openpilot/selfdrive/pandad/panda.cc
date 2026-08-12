@@ -130,57 +130,6 @@ void Panda::set_power_saving(bool power_saving) {
   handle->control_write(0xe7, power_saving, 0);
 }
 
-std::optional<wake_debug_t> Panda::enable_deepsleep() {
-  handle->control_write(PANDA_REQUEST_ENABLE_WAKE_MONITOR, 0, 0);
-
-  wake_debug_t wake_debug = {};
-  int err = handle->control_read(PANDA_REQUEST_GET_WAKE_DEBUG, 0, 0, (unsigned char*)&wake_debug, sizeof(wake_debug));
-  return err == static_cast<int>(sizeof(wake_debug)) ? std::make_optional(wake_debug) : std::nullopt;
-}
-
-static void wake_monitor_request_words(uint32_t value, uint16_t *low, uint16_t *high) {
-  *low = static_cast<uint16_t>(value & 0xFFFFU);
-  *high = static_cast<uint16_t>((value >> 16U) & 0xFFFFU);
-}
-
-std::optional<wake_monitor_status_t> Panda::get_wake_monitor_status() {
-  wake_monitor_status_t status = {};
-  int err = handle->control_read(PANDA_REQUEST_GET_WAKE_MONITOR_STATUS, 0, 0,
-                                 reinterpret_cast<unsigned char *>(&status), sizeof(status));
-  return err == static_cast<int>(sizeof(status)) ? std::make_optional(status) : std::nullopt;
-}
-
-std::optional<wake_monitor_status_t> Panda::prepare_wake_monitor(uint32_t transaction) {
-  uint16_t low = 0U;
-  uint16_t high = 0U;
-  wake_monitor_request_words(transaction, &low, &high);
-  handle->control_write(PANDA_REQUEST_PREPARE_WAKE_MONITOR, low, high);
-  return get_wake_monitor_status();
-}
-
-std::optional<wake_monitor_status_t> Panda::commit_wake_monitor(uint32_t transaction) {
-  uint16_t low = 0U;
-  uint16_t high = 0U;
-  wake_monitor_request_words(transaction, &low, &high);
-  handle->control_write(PANDA_REQUEST_COMMIT_WAKE_MONITOR, low, high);
-  return get_wake_monitor_status();
-}
-
-std::optional<wake_monitor_status_t> Panda::abort_wake_monitor(uint32_t transaction) {
-  uint16_t low = 0U;
-  uint16_t high = 0U;
-  wake_monitor_request_words(transaction, &low, &high);
-  handle->control_write(PANDA_REQUEST_ABORT_WAKE_MONITOR, low, high);
-  return get_wake_monitor_status();
-}
-
-void Panda::set_host_session(uint32_t host_session) {
-  uint16_t low = 0U;
-  uint16_t high = 0U;
-  wake_monitor_request_words(host_session, &low, &high);
-  handle->control_write(PANDA_REQUEST_SET_HOST_SESSION, low, high);
-}
-
 void Panda::send_heartbeat(bool engaged, bool engaged_mads) {
   handle->control_write(0xf3, engaged, engaged_mads);
 }
