@@ -9,10 +9,13 @@ import numpy as np
 
 from openpilot.cereal import log, messaging
 from openpilot.common.realtime import Ratekeeper
+from openpilot.common.params import Params
 from openpilot.common.swaglog import cloudlog
 from openpilot.common.transformations.camera import DEVICE_CAMERAS
-from openpilot.selfdrive.objectd.constants import (DEGRADED_INFERENCE_HZ, MAX_RESULT_AGE_MS,
-                                                   NORMAL_INFERENCE_HZ, PUBLISH_HZ, SCHEMA_VERSION)
+from openpilot.selfdrive.objectd.constants import (DEGRADED_INFERENCE_HZ, MAX_DISPLAY_DISTANCE_M, MAX_RESULT_AGE_MS,
+                                                   MIN_DISPLAY_DISTANCE_M, NORMAL_INFERENCE_HZ, PUBLISH_HZ, SCHEMA_VERSION)
+from openpilot.selfdrive.objectd.distance_calibration import (PARAM_KEY as DISTANCE_CALIBRATION_PARAM,
+                                                              CalibrationProfile, apply_profile, profiles_from_json)
 from openpilot.selfdrive.objectd.geometry import estimate_camera_ground_distance
 from openpilot.selfdrive.objectd.lane_geometry import classify_lane_corridor
 from openpilot.selfdrive.objectd.model_runner import model_hash
@@ -145,7 +148,8 @@ def _lane_context(sm) -> tuple[list[tuple[tuple[float, ...], tuple[float, ...]]]
 
 def _object_payload(track: dict, source_size: tuple[int, int],
                     calibration: CoarseCalibrationContext | None,
-                    lane_context: tuple[list[tuple[tuple[float, ...], tuple[float, ...]]], tuple[float, ...]] | None) -> dict:
+                    lane_context: tuple[list[tuple[tuple[float, ...], tuple[float, ...]]], tuple[float, ...]] | None,
+                    distance_profile: CalibrationProfile | None = None) -> dict:
   bbox = [float(v) for v in track["bbox"]]
   velocity = [float(v) for v in track["velocity"]]
   contact = ((bbox[0] + bbox[2]) / 2.0, bbox[3])
@@ -161,6 +165,12 @@ def _object_payload(track: dict, source_size: tuple[int, int],
   position = estimate.position if distance_valid else (0.0, 0.0, 0.0)
   distance = estimate.distance_m if distance_valid else 0.0
   distance_std = estimate.distance_std_m if distance_valid else 0.0
+  if distance_valid and distance_profile is not None:
+    position, distance = apply_profile(position, distance_profile)
+    distance_std *= abs(distance_profile.scale)
+    distance_valid = bool(MIN_DISPLAY_DISTANCE_M <= distance <= MAX_DISPLAY_DISTANCE_M)
+    if not distance_valid:
+      position, distance, distance_std = (0.0, 0.0, 0.0), 0.0, 0.0
   range_band = "unknown" if not distance_valid else ("near" if distance < 10.0 else "medium" if distance < 20.0 else "far")
   corridor_state = "unknown"
   if distance_valid and lane_context is not None:
@@ -198,6 +208,8 @@ def main() -> None:
   worker = WorkerController()
   retry = RetryController()
   governor = ResourceGovernor()
+  # Profiles change only through the manual calibration tool and take effect on the next objectd session.
+  distance_profiles = profiles_from_json(Params().get(DISTANCE_CALIBRATION_PARAM))
   model_times_ms: deque[float] = deque(maxlen=150)
   object_times_ms: deque[float] = deque(maxlen=150)
   last_result = None
@@ -283,7 +295,9 @@ def main() -> None:
       result_stream = str(last_result["stream_name"]) if last_result else desired_stream
       calibration = _coarse_calibration_context(sm, *source_size, result_stream) if result_valid else None
       lane_context = _lane_context(sm)
-      objects = ([_object_payload(obj, source_size, calibration, lane_context) for obj in last_result["objects"]]
+      distance_profile = distance_profiles.get(result_stream)
+      objects = ([_object_payload(obj, source_size, calibration, lane_context, distance_profile)
+                  for obj in last_result["objects"]]
                  if (result_valid or debug_degraded_objects) else [])
       coarse_distance_available = bool(calibration is not None and any(obj["distanceValid"] for obj in objects))
 
@@ -302,9 +316,10 @@ def main() -> None:
       state.resultAgeMs = float(result_age_ms) if np.isfinite(result_age_ms) else 0.0
       state.resultValid = result_valid
       state.modelHash = model_hash()
-      state.positionOrigin = "cameraGroundCenter"
+      state.positionOrigin = "frontBumperGroundCenter" if distance_profile is not None else "cameraGroundCenter"
       state.vehicleExtrinsicsValid = False
       state.roadPlaneValid = False
+      # SP alignment improves consistency but does not turn monocular ground projection into ground truth.
       state.distanceMode = "coarse" if coarse_distance_available else "invalid"
       state.objects = objects
       state.droppedObjectCount = int(last_result["dropped"]) if last_result else 0

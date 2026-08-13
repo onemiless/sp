@@ -29,9 +29,27 @@ one camera are never projected onto the other. The status badge reports the brie
 When distance display is enabled, objectd uses the live SP calibration, the selected ROAD/WIDE camera intrinsics and the
 WIDE camera-to-device orientation to intersect an unclipped detection-box ground contact with a locally flat road. Raw
 computed results from 5-100 m are displayed to one decimal place. Estimated uncertainty remains recorded but does not hide
-the displayed result. Values are relative to the camera ground point, are not front-bumper distances, and remain invalid
-when calibration or contact geometry is unavailable. This geometric estimate has no authority outside the display path and
-still requires measured-distance road validation, especially for long-range WIDE results.
+the displayed result. Without a fitted profile, values are relative to the camera ground point rather than the front bumper.
+With a fitted profile, the forward origin is aligned to SP `dRel`. Values remain invalid when calibration or contact geometry
+is unavailable. This geometric estimate has no authority outside the display path and still requires measured-distance road
+validation, especially for long-range WIDE results.
+
+The optional calibration tool records no camera frames and is not a resident service. During a varied-distance drive it
+matches only stable ego-lane YOLO motor-vehicle tracks to fresh SP `radarState` leads, rejects ambiguous associations, and
+fits ROAD and WIDE profiles independently. SP `dRel` becomes the calibrated forward distance. The same fitted camera scale
+is applied to the lateral component, while the longitudinal offset is not; side-object display distance is therefore the
+ground-plane slant range `hypot(forward, lateral)`, not an SP-provided side range.
+
+```bash
+python -m openpilot.selfdrive.objectd.tools.distance_calibrator status
+python -m openpilot.selfdrive.objectd.tools.distance_calibrator collect --duration 600
+python -m openpilot.selfdrive.objectd.tools.distance_calibrator reset
+```
+
+A valid fit needs at least 30 accepted samples spanning at least 15 m. Samples and fit evidence are kept under
+`/data/vision_object_distance_calibration`, capped at 50 MiB; camera frames are never stored. A saved profile takes effect
+on the next `objectd` session (normally the next offroad-to-onroad transition), avoiding parameter polling in the driving
+loop. Calibrated results remain marked `coarse`: agreement with SP is not independent physical ground-truth validation.
 
 SP's four model lane lines classify each ranged object as ego-lane, adjacent-lane, boundary overlap or unknown. The normal
 UI suppresses only ego-lane car, bus and truck boxes; person, bicycle and motorcycle boxes remain visible. Uncertain lane

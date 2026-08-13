@@ -12,6 +12,7 @@ class TestScopeContract(unittest.TestCase):
     self.assertIn('{"VisionObjectDetectionEnabled", {PERSISTENT | BACKUP, BOOL, "0"}}', params)
     self.assertIn('{"VisionObjectOverlay", {PERSISTENT | BACKUP, BOOL, "0"}}', params)
     self.assertIn('{"VisionObjectDistanceDisplay", {PERSISTENT | BACKUP, BOOL, "0"}}', params)
+    self.assertIn('{"VisionObjectDistanceCalibration", {PERSISTENT | BACKUP, JSON}}', params)
 
   def test_objectd_build_and_validation_recording_are_explicit(self):
     sconstruct = (REPO / "SConstruct").read_text(encoding="utf-8")

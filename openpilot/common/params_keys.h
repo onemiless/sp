@@ -240,6 +240,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"VisionObjectDetectionEnabled", {PERSISTENT | BACKUP, BOOL, "0"}},
     {"VisionObjectOverlay", {PERSISTENT | BACKUP, BOOL, "0"}},
     {"VisionObjectDistanceDisplay", {PERSISTENT | BACKUP, BOOL, "0"}},
+    {"VisionObjectDistanceCalibration", {PERSISTENT | BACKUP, JSON}},
     {"VisionObjectDebugOverlay", {PERSISTENT | BACKUP | DEVELOPMENT_ONLY, BOOL, "0"}},
     {"VisionObjectRecordValidation", {CLEAR_ON_OFFROAD_TRANSITION | DEVELOPMENT_ONLY, BOOL, "0"}},
     {"ToyotaEnforceStockLongitudinal", {PERSISTENT | BACKUP, BOOL, "0"}},
